@@ -1,0 +1,55 @@
+.workbench {
+  display: grid;
+  grid-template-columns: minmax(0, 1.08fr) minmax(460px, 0.92fr);
+  gap: 12px;
+  padding: 12px;
+  height: 100vh;
+  background: var(--bg);
+}
+
+.conversationCol {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+
+.workCol {
+  display: grid;
+  grid-template-rows:
+    minmax(170px, 0.5fr)
+    minmax(300px, 1.2fr)
+    minmax(230px, 0.9fr)
+    minmax(76px, 0.24fr);
+  gap: 12px;
+  min-height: 0;
+}
+
+.workTop,
+.workMid,
+.workArtifacts,
+.workBottom {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.workTop {
+  gap: 12px;
+}
+
+@media (max-width: 980px) {
+  .workbench {
+    grid-template-columns: minmax(0, 1fr);
+    height: auto;
+    min-height: 100vh;
+  }
+
+  .workCol {
+    grid-template-rows:
+      minmax(170px, auto)
+      minmax(320px, 42vh)
+      minmax(260px, 32vh)
+      minmax(76px, auto);
+  }
+}

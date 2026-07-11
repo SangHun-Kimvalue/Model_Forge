@@ -1,0 +1,40 @@
+# Model Forge CAD sandbox image — production DSL execution environment.
+#
+# This image is used by DockerSandboxRunner (ADR-0001, DESIGN.md R4).
+# It is intentionally minimal: only the libraries required to run
+# LLM-authored CadQuery / Build123d scripts are present.
+#
+# Build:
+#   docker build -t model-forge-cad-sandbox:2026.05.18 -f Dockerfile.cad-sandbox .
+#
+# The image tag must match CAD_SANDBOX_DOCKER_IMAGE in .env.example.
+# Update the tag (and the env default in runner.py) when the image changes.
+
+# R8 reproducibility: the base image is tag + digest pinned. Refresh both
+# together via Docker Hub/buildx when intentionally upgrading the sandbox.
+FROM python:3.11.9-slim-bookworm@sha256:003766060909c14ce1b0fa18aabed0bfc5ed269c4b52ecabc8d2632571665597 AS base
+
+# Install system dependencies required by cadquery / pythonocc-core
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libglu1-mesa \
+    libgl1-mesa-glx \
+    libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create a non-root user for the sandbox
+RUN useradd -m -u 1000 -s /bin/sh sandbox
+
+ARG CADQUERY_VERSION=2.7.0
+ARG BUILD123D_VERSION=0.10.0
+
+# Install cadquery and build123d (Python CAD dialects supported by CadQueryAdapter).
+# Pin exact versions for reproducibility; do not use ranges in the production image.
+RUN pip install --no-cache-dir \
+    "cadquery==${CADQUERY_VERSION}" \
+    "build123d==${BUILD123D_VERSION}"
+
+# The sandbox runs as the non-root user
+USER sandbox
+
+# No CMD — the runner injects a script and executes sys.executable <script_path>
+# The container entrypoint is set by DockerSandboxRunner per-execution.

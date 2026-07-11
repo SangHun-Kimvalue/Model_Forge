@@ -1,0 +1,38 @@
+{
+  "schema_version": "12z-g.prohibited-categories.v1",
+  "categories": [
+    {
+      "category_id": "firearm",
+      "terms": [
+        "권총",
+        "handgun",
+        "pistol",
+        "gun grip",
+        "권총 그립"
+      ],
+      "reason": "prohibited_category",
+      "user_message_ko": "안전상 제작을 진행할 수 없는 무기류 관련 요청입니다."
+    },
+    {
+      "category_id": "magazine",
+      "terms": [
+        "탄창",
+        "magazine",
+        "ammunition magazine"
+      ],
+      "reason": "prohibited_category",
+      "user_message_ko": "안전상 제작을 진행할 수 없는 무기류 부품 관련 요청입니다."
+    },
+    {
+      "category_id": "blade",
+      "terms": [
+        "나이프 손잡이",
+        "knife handle",
+        "knife grip",
+        "칼 손잡이"
+      ],
+      "reason": "prohibited_category",
+      "user_message_ko": "안전상 제작을 진행할 수 없는 칼날류 관련 요청입니다."
+    }
+  ]
+}

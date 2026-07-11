@@ -1,0 +1,56 @@
+.list {
+  flex: 1 1 auto;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.event {
+  display: grid;
+  grid-template-columns: minmax(86px, 96px) minmax(0, 1fr) auto;
+  grid-template-areas:
+    "kind state time"
+    "detail detail detail";
+  column-gap: 10px;
+  row-gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  line-height: 1.4;
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.kind {
+  grid-area: kind;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.detail {
+  grid-area: detail;
+  color: var(--text-dim);
+  word-break: break-word;
+}
+
+.sessionState {
+  grid-area: state;
+  color: var(--text);
+  justify-self: start;
+  white-space: nowrap;
+}
+
+.time {
+  grid-area: time;
+  color: var(--text-dim);
+  justify-self: end;
+  white-space: nowrap;
+}
+
+.empty {
+  color: var(--text-dim);
+  font-size: 13px;
+  margin: 0;
+}

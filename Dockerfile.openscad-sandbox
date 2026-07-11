@@ -1,0 +1,50 @@
+# Model Forge OpenSCAD sandbox image - untrusted SCAD execution environment.
+#
+# This image is used by OpenSCADDockerRunner for server-side execution of
+# prompt-generated OpenSCAD source. It is separate from Dockerfile.cad-sandbox:
+# CadQuery/build123d run as Python CAD; OpenSCAD runs as its own CLI runtime.
+#
+# Build:
+#   docker build -t model-forge-openscad-sandbox:2026.05.19 -f Dockerfile.openscad-sandbox .
+#
+# Runtime:
+#   OpenSCADDockerRunner injects:
+#     --read-only
+#     --tmpfs /tmp:rw,noexec,nosuid,size=64m
+#     --network none
+#     --memory / --cpus / --pids-limit
+#     --security-opt no-new-privileges
+#     --cap-drop ALL
+#     one writable mount: request.output_dir -> /workspace/out
+#
+# Keep OPENSCAD_DEBIAN_VERSION, OPENSCAD_DOCKER_IMAGE, and
+# docs/ENVIRONMENT.md aligned when updating this image.
+
+# R8 reproducibility: base image is tag + digest pinned. This reuses the
+# already validated Debian bookworm base from Dockerfile.cad-sandbox; refresh the
+# tag and digest together only through an intentional sandbox-runtime update.
+FROM python:3.11.9-slim-bookworm@sha256:003766060909c14ce1b0fa18aabed0bfc5ed269c4b52ecabc8d2632571665597
+
+ARG OPENSCAD_DEBIAN_VERSION=2021.01-6
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    HOME=/tmp \
+    XDG_CACHE_HOME=/tmp/.cache \
+    XDG_CONFIG_HOME=/tmp/.config \
+    FONTCONFIG_PATH=/etc/fonts
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        fontconfig \
+        fonts-dejavu-core \
+        "openscad=${OPENSCAD_DEBIAN_VERSION}" \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN useradd --system --uid 10001 --gid nogroup --home-dir /tmp --shell /usr/sbin/nologin sandbox
+
+USER 10001:65534
+WORKDIR /workspace/out
+
+# No ENTRYPOINT or CMD. OpenSCADDockerRunner supplies the exact command:
+#   openscad -o sandbox-result.stl _model_forge_openscad_entry.scad

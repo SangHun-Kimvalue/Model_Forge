@@ -1,0 +1,183 @@
+.row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  gap: 12px;
+}
+
+.k {
+  font-size: 12px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.v {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: var(--text);
+  word-break: break-all;
+}
+
+.routeBox {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 8px 0 10px;
+  padding: 8px;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--panel) 88%, var(--bg));
+}
+
+.routeLabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.routeDetail {
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.35;
+}
+
+.choiceBox {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.candidateList {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 4px;
+}
+
+.candidateItem {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  border: 1px solid var(--panel-border);
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--panel) 92%, var(--bg));
+}
+
+.candidateLabel {
+  align-self: flex-start;
+  font-size: 10px;
+  color: var(--text-dim);
+  border: 1px solid var(--panel-border);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+.choiceButton {
+  align-self: flex-start;
+  min-height: 28px;
+  padding: 4px 8px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 16%, var(--panel));
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.choiceButton:disabled {
+  cursor: progress;
+  opacity: 0.65;
+}
+
+.badge {
+  font-size: 12px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--panel-border);
+  background: var(--bg);
+}
+
+.state_awaiting_approval {
+  border-color: var(--warning);
+  color: var(--warning);
+}
+
+.state_running {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.state_completed {
+  border-color: var(--success);
+  color: var(--success);
+}
+
+.state_failed {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.subtasks {
+  margin-top: 12px;
+  flex: 1 1 auto;
+  overflow: auto;
+}
+
+.subhead {
+  margin: 0 0 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.empty {
+  color: var(--text-dim);
+  font-size: 12px;
+  margin: 0;
+}
+
+.list {
+  margin: 0;
+  padding-left: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.subtask {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 13px;
+}
+
+.kind {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+  border: 1px solid var(--panel-border);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+.status_running {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.status_completed {
+  color: var(--success);
+  border-color: var(--success);
+}
+
+.status_failed {
+  color: var(--danger);
+  border-color: var(--danger);
+}

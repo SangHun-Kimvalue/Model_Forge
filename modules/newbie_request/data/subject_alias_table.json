@@ -1,0 +1,89 @@
+{
+  "schema_version": "12z-b1.subject-alias-table.v1",
+  "aliases": [
+    {
+      "alias_id": "bear_keyring",
+      "terms": ["곰", "곰돌이", "bear", "테디 베어", "테디베어", "teddy bear", "teddybear"],
+      "category": "decorative_keyring",
+      "object_type": "decorative_keyring",
+      "subject": "bear",
+      "style": null,
+      "request_id": "bear_keyring",
+      "required_features": ["bear_head", "ears", "eyes", "nose_or_muzzle", "keyring_hole"],
+      "route_reason": "exact_decorative_keyring_subject",
+      "questions": [],
+      "exclude_terms": [],
+      "confidence": 0.95
+    },
+    {
+      "alias_id": "rabbit_keyring",
+      "terms": ["토끼", "rabbit"],
+      "category": "decorative_keyring",
+      "object_type": "decorative_keyring",
+      "subject": "rabbit",
+      "style": "long_ears",
+      "request_id": "rabbit_keyring",
+      "required_features": ["rabbit_head", "ears", "eyes", "nose_or_muzzle", "keyring_hole"],
+      "route_reason": "exact_decorative_keyring_subject",
+      "questions": [],
+      "exclude_terms": [],
+      "confidence": 0.95
+    },
+    {
+      "alias_id": "cat_keyring",
+      "terms": ["고양이", "cat"],
+      "category": "decorative_keyring",
+      "object_type": "decorative_keyring",
+      "subject": "cat",
+      "style": "round_face",
+      "request_id": null,
+      "required_features": ["cat_head", "ears", "eyes", "nose_or_muzzle", "whiskers", "keyring_hole"],
+      "route_reason": "draftable_decorative_keyring_subject",
+      "questions": [],
+      "exclude_terms": [],
+      "confidence": 0.9
+    },
+    {
+      "alias_id": "animal_keyring_ambiguity",
+      "terms": ["동물", "animal"],
+      "category": "decorative_keyring",
+      "object_type": "decorative_keyring",
+      "subject": null,
+      "style": null,
+      "request_id": null,
+      "required_features": ["recognizable_subject", "keyring_hole"],
+      "route_reason": "ambiguous_decorative_subject",
+      "questions": ["어떤 동물 모양으로 만들까요?"],
+      "exclude_terms": [],
+      "confidence": 0.55
+    },
+    {
+      "alias_id": "simple_bracket",
+      "terms": ["브라켓"],
+      "category": "utility_mechanical",
+      "object_type": "bracket",
+      "subject": null,
+      "style": null,
+      "request_id": null,
+      "required_features": ["bracket_body", "mounting_holes"],
+      "route_reason": "missing_mechanical_dimensions",
+      "questions": ["브라켓의 크기와 구멍 개수를 알려주세요."],
+      "exclude_terms": [],
+      "confidence": 0.55
+    },
+    {
+      "alias_id": "cup_or_container",
+      "terms": ["컵"],
+      "category": "household_holder",
+      "object_type": "cup_or_container",
+      "subject": null,
+      "style": null,
+      "request_id": null,
+      "required_features": ["container_body", "stable_base"],
+      "route_reason": "unsupported_or_ambiguous_route",
+      "questions": ["컵은 음료용 컵, 연필꽂이, 작은 화분 중 어떤 용도인가요?"],
+      "exclude_terms": ["컵홀더", "컵받침"],
+      "confidence": 0.55
+    }
+  ]
+}

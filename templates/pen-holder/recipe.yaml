@@ -1,0 +1,36 @@
+id: pen-holder
+version: "1.0.0"
+title: "Pen / Pencil Holder"
+category: desk
+dialect: openscad
+description: >
+  A simple parametric cylindrical pen holder.
+  Printed upright; open top, closed bottom.
+
+parameters:
+  - name: diameter_mm
+    type: float
+    default: 40.0
+    min: 20.0
+    max: 150.0
+    description: "Inner diameter of the holder (mm)"
+
+  - name: height_mm
+    type: float
+    default: 100.0
+    min: 30.0
+    max: 300.0
+    description: "Height of the holder (mm)"
+
+  - name: wall_mm
+    type: float
+    default: 3.0
+    min: 1.5
+    max: 10.0
+    description: "Wall thickness (mm)"
+
+slicer_hints:
+  layer_height_mm: 0.2
+  infill_percent: 20
+
+code_template: model.scad

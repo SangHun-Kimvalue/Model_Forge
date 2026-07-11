@@ -1,0 +1,36 @@
+id: simple-cup
+version: "1.0.0"
+title: "Simple Open Cup"
+category: utility
+dialect: openscad
+description: >
+  A deterministic open-top cup/container fallback for local freeform CAD
+  failures. Printed upright with a closed bottom and printable wall thickness.
+
+parameters:
+  - name: outer_diameter_mm
+    type: float
+    default: 36.0
+    min: 20.0
+    max: 120.0
+    description: "Outer diameter of the cup body (mm)"
+
+  - name: height_mm
+    type: float
+    default: 42.0
+    min: 20.0
+    max: 160.0
+    description: "Total cup height (mm)"
+
+  - name: wall_mm
+    type: float
+    default: 3.0
+    min: 2.5
+    max: 8.0
+    description: "Wall and bottom thickness (mm)"
+
+slicer_hints:
+  layer_height_mm: 0.2
+  infill_percent: 20
+
+code_template: model.scad

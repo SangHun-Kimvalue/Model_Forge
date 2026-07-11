@@ -1,0 +1,11 @@
+{
+  "schema_version": "12z-c1.subject-category-labels.v1",
+  "subjects": [
+    {"key": "bear", "label_ko": "곰돌이"},
+    {"key": "rabbit", "label_ko": "토끼"}
+  ],
+  "categories": [
+    {"key": "keyring", "label_ko": "키링"},
+    {"key": "decorative_keyring", "label_ko": "키링"}
+  ]
+}

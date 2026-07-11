@@ -1,0 +1,355 @@
+{
+  "components": [
+    {
+      "component_type": "base_rounded_tag",
+      "provides_features": ["tag_base", "stable_base"],
+      "allowed_categories": ["decorative_keyring", "decorative_text"],
+      "allowed_anchor_roles": ["base", "center", "generic"],
+      "min_size_mm": {"width": 35, "depth": 25, "height": 2.5},
+      "manufacturing_risk": "low",
+      "visual_quality_role": "base",
+      "renderer_hint": "assembly_2d_extrude"
+    },
+    {
+      "component_type": "bear_head",
+      "provides_features": ["bear_head", "recognizable_subject"],
+      "allowed_categories": ["decorative_keyring"],
+      "allowed_object_types": ["decorative_keyring"],
+      "allowed_anchor_roles": ["center", "face"],
+      "min_size_mm": {"width": 28, "depth": 24, "height": 2.5},
+      "manufacturing_risk": "medium",
+      "visual_quality_role": "subject",
+      "renderer_hint": "assembly_relief"
+    },
+    {
+      "component_type": "rabbit_head",
+      "provides_features": ["rabbit_head", "recognizable_subject"],
+      "allowed_categories": ["decorative_keyring"],
+      "allowed_object_types": ["decorative_keyring"],
+      "allowed_anchor_roles": ["center", "face"],
+      "min_size_mm": {"width": 28, "depth": 24, "height": 2.5},
+      "manufacturing_risk": "medium",
+      "visual_quality_role": "subject",
+      "renderer_hint": "assembly_relief"
+    },
+    {
+      "component_type": "cat_head",
+      "provides_features": ["cat_head", "recognizable_subject"],
+      "allowed_categories": ["decorative_keyring", "decorative_text"],
+      "allowed_anchor_roles": ["center", "face"],
+      "min_size_mm": {"width": 28, "depth": 20, "height": 2.5},
+      "manufacturing_risk": "medium",
+      "visual_quality_role": "subject",
+      "renderer_hint": "assembly_relief"
+    },
+    {
+      "component_type": "ears",
+      "provides_features": ["ears"],
+      "allowed_categories": ["decorative_keyring", "decorative_text"],
+      "allowed_anchor_roles": ["top", "face"],
+      "manufacturing_risk": "medium",
+      "visual_quality_role": "subject_detail",
+      "renderer_hint": "assembly_relief"
+    },
+    {
+      "component_type": "rabbit_ears",
+      "provides_features": ["ears", "rabbit_ears"],
+      "allowed_categories": ["decorative_keyring"],
+      "allowed_object_types": ["decorative_keyring"],
+      "allowed_anchor_roles": ["top"],
+      "manufacturing_risk": "medium",
+      "visual_quality_role": "subject_detail",
+      "renderer_hint": "assembly_relief"
+    },
+    {
+      "component_type": "cat_ears",
+      "provides_features": ["ears", "cat_ears"],
+      "allowed_categories": ["decorative_keyring", "decorative_text"],
+      "allowed_anchor_roles": ["top"],
+      "manufacturing_risk": "medium",
+      "visual_quality_role": "subject_detail",
+      "renderer_hint": "assembly_relief"
+    },
+    {
+      "component_type": "eye_dots",
+      "provides_features": ["eyes"],
+      "allowed_categories": ["decorative_keyring", "decorative_text"],
+      "allowed_anchor_roles": ["face"],
+      "manufacturing_risk": "low",
+      "visual_quality_role": "subject_detail",
+      "renderer_hint": "assembly_relief"
+    },
+    {
+      "component_type": "eyes",
+      "provides_features": ["eyes"],
+      "allowed_categories": ["decorative_keyring", "decorative_text"],
+      "allowed_anchor_roles": ["face"],
+      "manufacturing_risk": "low",
+      "visual_quality_role": "subject_detail",
+      "renderer_hint": "assembly_relief"
+    },
+    {
+      "component_type": "nose_muzzle",
+      "provides_features": ["nose_or_muzzle"],
+      "allowed_categories": ["decorative_keyring", "decorative_text"],
+      "allowed_anchor_roles": ["face"],
+      "manufacturing_risk": "low",
+      "visual_quality_role": "subject_detail",
+      "renderer_hint": "assembly_relief"
+    },
+    {
+      "component_type": "keyring_hole",
+      "provides_features": ["keyring_hole", "through_hole"],
+      "allowed_categories": ["decorative_keyring", "decorative_text", "decorative_figure"],
+      "allowed_anchor_roles": ["top", "loop"],
+      "manufacturing_risk": "medium",
+      "visual_quality_role": "functional",
+      "renderer_hint": "boolean_cut"
+    },
+    {
+      "component_type": "embossed_text",
+      "provides_features": ["embossed_text", "raised_logo_or_text"],
+      "allowed_categories": ["decorative_text", "household_decor"],
+      "allowed_anchor_roles": ["front", "face", "center"],
+      "manufacturing_risk": "medium",
+      "visual_quality_role": "text",
+      "renderer_hint": "text_relief"
+    },
+    {
+      "component_type": "coaster_base",
+      "provides_features": ["coaster_base", "stable_base"],
+      "allowed_categories": ["household_decor"],
+      "allowed_object_types": ["coaster"],
+      "allowed_anchor_roles": ["base", "center"],
+      "min_size_mm": {"width": 70, "depth": 70, "height": 2.5},
+      "manufacturing_risk": "low",
+      "visual_quality_role": "base",
+      "renderer_hint": "template_bridge"
+    },
+    {
+      "component_type": "pen_cup_body",
+      "provides_features": ["pen_cup_body"],
+      "allowed_categories": ["household_holder"],
+      "allowed_object_types": ["pen_holder"],
+      "allowed_anchor_roles": ["base", "center"],
+      "min_size_mm": {"width": 45, "depth": 45, "height": 55},
+      "manufacturing_risk": "medium",
+      "visual_quality_role": "functional",
+      "renderer_hint": "template_bridge"
+    },
+    {
+      "component_type": "stable_base",
+      "provides_features": ["stable_base"],
+      "allowed_anchor_roles": ["base", "center", "generic"],
+      "manufacturing_risk": "low",
+      "visual_quality_role": "functional",
+      "renderer_hint": "assembly_2d_extrude"
+    },
+    {
+      "component_type": "mounting_base",
+      "provides_features": ["mounting_base", "stable_base"],
+      "allowed_categories": ["utility_household", "utility_mechanical"],
+      "allowed_anchor_roles": ["base", "center"],
+      "manufacturing_risk": "low",
+      "visual_quality_role": "functional",
+      "renderer_hint": "assembly_2d_extrude"
+    },
+    {
+      "component_type": "cable_slot",
+      "provides_features": ["cable_slot"],
+      "allowed_categories": ["utility_household"],
+      "allowed_object_types": ["cable_holder"],
+      "allowed_anchor_roles": ["front", "center"],
+      "manufacturing_risk": "medium",
+      "visual_quality_role": "functional",
+      "renderer_hint": "boolean_cut"
+    },
+    {
+      "component_type": "phone_lip",
+      "provides_features": ["phone_lip"],
+      "allowed_categories": ["utility_household"],
+      "allowed_object_types": ["phone_stand"],
+      "allowed_anchor_roles": ["front"],
+      "manufacturing_risk": "medium",
+      "visual_quality_role": "functional",
+      "renderer_hint": "template_bridge"
+    },
+    {
+      "component_type": "support_back",
+      "provides_features": ["support_back"],
+      "allowed_categories": ["utility_household"],
+      "allowed_object_types": ["phone_stand"],
+      "allowed_anchor_roles": ["back"],
+      "manufacturing_risk": "medium",
+      "visual_quality_role": "functional",
+      "renderer_hint": "template_bridge"
+    },
+    {
+      "component_type": "bracket_body",
+      "provides_features": ["bracket_body"],
+      "allowed_categories": ["utility_mechanical"],
+      "allowed_object_types": ["bracket"],
+      "allowed_anchor_roles": ["base", "center"],
+      "min_size_mm": {"width": 40, "depth": 20, "height": 3},
+      "manufacturing_risk": "medium",
+      "visual_quality_role": "functional",
+      "renderer_hint": "template_bridge"
+    },
+    {
+      "component_type": "mounting_hole",
+      "provides_features": ["mounting_holes", "through_hole"],
+      "allowed_categories": ["utility_mechanical"],
+      "allowed_anchor_roles": ["front", "center", "corner"],
+      "manufacturing_risk": "medium",
+      "visual_quality_role": "functional",
+      "renderer_hint": "boolean_cut"
+    },
+    {
+      "component_type": "mounting_holes",
+      "provides_features": ["mounting_holes", "through_hole"],
+      "allowed_categories": ["utility_mechanical"],
+      "allowed_anchor_roles": ["front", "center", "corner"],
+      "manufacturing_risk": "medium",
+      "visual_quality_role": "functional",
+      "renderer_hint": "boolean_cut"
+    },
+    {
+      "component_type": "planter_pot",
+      "provides_features": ["planter_pot"],
+      "allowed_categories": ["household_decor"],
+      "allowed_object_types": ["planter"],
+      "allowed_anchor_roles": ["base", "center"],
+      "manufacturing_risk": "medium",
+      "visual_quality_role": "functional",
+      "renderer_hint": "template_bridge"
+    },
+    {
+      "component_type": "drainage_hole",
+      "provides_features": ["drainage_hole", "through_hole"],
+      "allowed_categories": ["household_decor", "household_holder"],
+      "allowed_anchor_roles": ["base", "bottom"],
+      "manufacturing_risk": "medium",
+      "visual_quality_role": "functional",
+      "renderer_hint": "boolean_cut"
+    },
+    {
+      "component_type": "tray_base",
+      "provides_features": ["tray_base", "stable_base"],
+      "allowed_categories": ["utility_household"],
+      "allowed_object_types": ["organizer_tray"],
+      "allowed_anchor_roles": ["base", "center"],
+      "manufacturing_risk": "low",
+      "visual_quality_role": "functional",
+      "renderer_hint": "template_bridge"
+    },
+    {
+      "component_type": "divider",
+      "provides_features": ["divider"],
+      "allowed_categories": ["utility_household"],
+      "allowed_object_types": ["organizer_tray"],
+      "allowed_anchor_roles": ["center"],
+      "manufacturing_risk": "low",
+      "visual_quality_role": "functional",
+      "renderer_hint": "template_bridge"
+    },
+    {
+      "component_type": "label_plate",
+      "provides_features": ["label_plate"],
+      "allowed_categories": ["decorative_text", "utility_household"],
+      "allowed_anchor_roles": ["front", "center"],
+      "manufacturing_risk": "low",
+      "visual_quality_role": "text_base",
+      "renderer_hint": "assembly_2d_extrude"
+    },
+    {
+      "component_type": "tag_base",
+      "provides_features": ["tag_base", "stable_base"],
+      "allowed_categories": ["decorative_text"],
+      "allowed_anchor_roles": ["base", "center"],
+      "manufacturing_risk": "low",
+      "visual_quality_role": "base",
+      "renderer_hint": "assembly_2d_extrude"
+    },
+    {
+      "component_type": "toothbrush_slot",
+      "provides_features": ["toothbrush_slot"],
+      "allowed_categories": ["household_holder"],
+      "allowed_object_types": ["toothbrush_stand"],
+      "allowed_anchor_roles": ["top", "center"],
+      "manufacturing_risk": "medium",
+      "visual_quality_role": "functional",
+      "renderer_hint": "boolean_cut"
+    },
+    {
+      "component_type": "bookmark_body",
+      "provides_features": ["bookmark_body"],
+      "allowed_categories": ["decorative_text"],
+      "allowed_object_types": ["bookmark"],
+      "allowed_anchor_roles": ["base", "center"],
+      "manufacturing_risk": "medium",
+      "visual_quality_role": "base",
+      "renderer_hint": "assembly_2d_extrude"
+    },
+    {
+      "component_type": "clip",
+      "provides_features": ["clip"],
+      "allowed_categories": ["utility_household"],
+      "allowed_anchor_roles": ["back", "center"],
+      "manufacturing_risk": "medium",
+      "visual_quality_role": "functional",
+      "renderer_hint": "template_bridge"
+    },
+    {
+      "component_type": "stake",
+      "provides_features": ["stake"],
+      "allowed_categories": ["utility_household"],
+      "allowed_object_types": ["plant_label_stake"],
+      "allowed_anchor_roles": ["bottom", "base"],
+      "manufacturing_risk": "medium",
+      "visual_quality_role": "functional",
+      "renderer_hint": "template_bridge"
+    },
+    {
+      "component_type": "trophy_base",
+      "provides_features": ["trophy_base", "stable_base"],
+      "allowed_categories": ["decorative_text"],
+      "allowed_object_types": ["trophy"],
+      "allowed_anchor_roles": ["base", "center"],
+      "manufacturing_risk": "medium",
+      "visual_quality_role": "base",
+      "renderer_hint": "component_assembly"
+    },
+    {
+      "component_type": "case_pocket",
+      "provides_features": ["case_pocket"],
+      "allowed_categories": ["utility_household"],
+      "allowed_object_types": ["case_holder"],
+      "allowed_anchor_roles": ["center"],
+      "manufacturing_risk": "low",
+      "visual_quality_role": "functional",
+      "renderer_hint": "template_bridge"
+    },
+    {
+      "component_type": "recognizable_subject",
+      "provides_features": ["recognizable_subject"],
+      "allowed_categories": ["decorative_figure"],
+      "allowed_anchor_roles": ["center"],
+      "manufacturing_risk": "high",
+      "visual_quality_role": "subject",
+      "renderer_hint": "curated_asset_placeholder",
+      "license_status": "requires_review",
+      "provenance_status": "not_approved_for_product"
+    },
+    {
+      "component_type": "stable_base_or_loop",
+      "provides_features": ["stable_base_or_loop", "stable_base", "keyring_hole"],
+      "allowed_categories": ["decorative_figure"],
+      "allowed_anchor_roles": ["base", "loop", "top"],
+      "manufacturing_risk": "medium",
+      "visual_quality_role": "functional",
+      "renderer_hint": "curated_asset_placeholder",
+      "license_status": "requires_review",
+      "provenance_status": "not_approved_for_product"
+    }
+  ]
+}

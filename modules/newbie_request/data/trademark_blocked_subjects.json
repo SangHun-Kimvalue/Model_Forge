@@ -1,0 +1,42 @@
+{
+  "schema_version": "12z-b1.trademark-blocked-subjects.v1",
+  "blocked_subjects": [
+    {
+      "blocked_id": "bb8",
+      "terms": ["BB-8", "BB8", "bb8", "B B - 8"],
+      "category": "decorative_keyring",
+      "subject": "bb8",
+      "style": null,
+      "reason": "trademark_or_ip_review_required",
+      "questions": ["상표/IP 검토가 필요한 캐릭터 요청입니다. 자체 디자인이나 일반 로봇 스타일로 바꿀지 확인해 주세요."]
+    },
+    {
+      "blocked_id": "mickey",
+      "subject": "mickey",
+      "terms": [
+        "미키마우스",
+        "Mickey Mouse"
+      ],
+      "category": "decorative_keyring",
+      "reason": "trademark_or_ip_review_required",
+      "questions": [
+        "상표/IP 검토가 필요한 캐릭터입니다. 자체 디자인으로 바꿀지 확인해 주세요."
+      ]
+    },
+    {
+      "blocked_id": "lego",
+      "subject": "lego",
+      "terms": [
+        "레고 호환",
+        "lego compatible",
+        "레고",
+        "lego"
+      ],
+      "category": "decorative_keyring",
+      "reason": "trademark_or_ip_review_required",
+      "questions": [
+        "상표/IP 검토가 필요합니다(레고 호환). 일반 브릭 규격으로 진행할지 확인해 주세요."
+      ]
+    }
+  ]
+}

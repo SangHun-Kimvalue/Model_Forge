@@ -1,0 +1,20 @@
+{
+  "name": "model_forge-workspace",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "lint": "pnpm --filter web lint",
+    "typecheck": "pnpm --filter web typecheck",
+    "test": "pnpm --filter web test",
+    "e2e": "pnpm --filter web e2e",
+    "e2e:orca-live": "pnpm --filter web e2e:orca-live"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "unrs-resolver",
+      "@swc/core",
+      "@next/swc-win32-x64-msvc"
+    ]
+  }
+}

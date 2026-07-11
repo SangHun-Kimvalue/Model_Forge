@@ -1,0 +1,68 @@
+.transcript {
+  flex: 1 1 auto;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-bottom: 12px;
+}
+
+.empty {
+  color: var(--text-dim);
+  font-size: 13px;
+  margin: 0;
+}
+
+.message {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.role {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+}
+
+.role_user {
+  border-color: rgba(79, 140, 255, 0.4);
+}
+
+.role_assistant {
+  border-color: rgba(74, 210, 149, 0.3);
+}
+
+.text {
+  white-space: pre-wrap;
+  font-size: 14px;
+}
+
+.composer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-top: 1px solid var(--panel-border);
+  padding-top: 12px;
+}
+
+.composerRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.hint {
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.error {
+  color: var(--danger);
+  font-size: 12px;
+}

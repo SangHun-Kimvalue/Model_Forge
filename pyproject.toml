@@ -1,0 +1,63 @@
+[project]
+name = "model_forge"
+version = "0.1.0"
+description = "Agentic 3D printing automation pipeline."
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.12,<3",
+    "fastapi>=0.115,<1",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+anthropic = [
+    "anthropic>=0.102,<0.103",
+]
+openai = [
+    "openai>=1.50,<2",
+]
+gemini = [
+    "google-genai==1.68.0",
+]
+meshy = [
+    "httpx>=0.27,<1",
+]
+trimesh = [
+    "trimesh>=4.0,<5",
+]
+cadquery = [
+    "cadquery>=2.4,<3",
+]
+dev = [
+    "pytest>=9,<10",
+    "pytest-asyncio>=1.0",
+    "ruff>=0.8",
+    "mypy>=1.13",
+    "httpx>=0.27,<1",
+    "uvicorn>=0.30,<1",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+addopts = "-q"
+# tests/integration is opt-in (Phase 9C-Live etc.). It requires external
+# runtime (Orca MCP binary, etc.) and is gated behind explicit env flags.
+# Run with: `python -m pytest tests/integration/orca_mcp -q` (or similar).
+norecursedirs = ["tests/integration", "*.egg", ".*", "build", "dist", "node_modules"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = ["google.*"]
+ignore_missing_imports = true

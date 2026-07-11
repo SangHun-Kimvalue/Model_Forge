@@ -1,0 +1,49 @@
+id: simple-bracket
+version: "1.0.0"
+title: "Simple Mounting Bracket"
+category: fixture
+dialect: openscad
+description: >
+  A deterministic rectangular bracket fallback with four real through-holes.
+
+parameters:
+  - name: length_mm
+    type: float
+    default: 100.0
+    min: 30.0
+    max: 180.0
+    description: "Bracket length (mm)"
+
+  - name: width_mm
+    type: float
+    default: 50.0
+    min: 20.0
+    max: 120.0
+    description: "Bracket width (mm)"
+
+  - name: thickness_mm
+    type: float
+    default: 5.0
+    min: 2.5
+    max: 15.0
+    description: "Bracket thickness (mm)"
+
+  - name: hole_diameter_mm
+    type: float
+    default: 6.0
+    min: 3.0
+    max: 15.0
+    description: "Mounting hole diameter (mm)"
+
+  - name: hole_count
+    type: int
+    default: 4
+    min: 2
+    max: 4
+    description: "Number of mounting holes to cut. L3F supports 2 to 4 holes."
+
+slicer_hints:
+  layer_height_mm: 0.2
+  infill_percent: 30
+
+code_template: model.scad
