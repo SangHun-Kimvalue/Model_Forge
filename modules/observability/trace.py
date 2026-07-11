@@ -21,9 +21,9 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 
-_trace_id: ContextVar[str | None] = ContextVar("cubi_trace_id", default=None)
-_session_id: ContextVar[str | None] = ContextVar("cubi_session_id", default=None)
-_job_id: ContextVar[str | None] = ContextVar("cubi_job_id", default=None)
+_trace_id: ContextVar[str | None] = ContextVar("model_forge_trace_id", default=None)
+_session_id: ContextVar[str | None] = ContextVar("model_forge_session_id", default=None)
+_job_id: ContextVar[str | None] = ContextVar("model_forge_job_id", default=None)
 
 
 @dataclass(frozen=True)
