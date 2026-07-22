@@ -1,11 +1,11 @@
-# Model Forge CAD sandbox image — production DSL execution environment.
+# Model Forge CAD Sandbox Image — Production DSL execution environment.
 #
 # This image is used by DockerSandboxRunner (ADR-0001, DESIGN.md R4).
 # It is intentionally minimal: only the libraries required to run
 # LLM-authored CadQuery / Build123d scripts are present.
 #
 # Build:
-#   docker build -t model-forge-cad-sandbox:2026.05.18 -f Dockerfile.cad-sandbox .
+#   docker build -t model_forge-cad-sandbox:2026.05.18 -f Dockerfile.cad-sandbox .
 #
 # The image tag must match CAD_SANDBOX_DOCKER_IMAGE in .env.example.
 # Update the tag (and the env default in runner.py) when the image changes.

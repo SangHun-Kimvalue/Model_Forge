@@ -1,11 +1,11 @@
-# Model Forge OpenSCAD sandbox image - untrusted SCAD execution environment.
+# Model Forge OpenSCAD Sandbox Image - untrusted SCAD execution environment.
 #
 # This image is used by OpenSCADDockerRunner for server-side execution of
 # prompt-generated OpenSCAD source. It is separate from Dockerfile.cad-sandbox:
 # CadQuery/build123d run as Python CAD; OpenSCAD runs as its own CLI runtime.
 #
 # Build:
-#   docker build -t model-forge-openscad-sandbox:2026.05.19 -f Dockerfile.openscad-sandbox .
+#   docker build -t model_forge-openscad-sandbox:2026.05.19 -f Dockerfile.openscad-sandbox .
 #
 # Runtime:
 #   OpenSCADDockerRunner injects:

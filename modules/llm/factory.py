@@ -2,14 +2,14 @@ import logging
 import os
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from modules.llm.adapters.mock import MockLLMProvider
 from modules.llm.base import BaseLLMProvider
 from modules.llm.exceptions import LLMProviderConfigError
 from modules.observability.events import mock_selected_event, mock_selected_extra
 
-ProviderName = Literal["mock", "anthropic", "openai", "gemini", "ollama", "local"]
+ProviderName = Literal["mock", "anthropic", "openai", "gemini", "ollama", "local", "cli"]
 
 __all__ = [
     "LLMProviderSettings",
@@ -41,24 +41,37 @@ class LLMProviderSettings(BaseModel):
     gemini_model: str | None = Field(default=None)
     ollama_base_url: str = Field(default="http://127.0.0.1:11434")
     ollama_timeout_s: float = Field(default=120.0, gt=0.0)
+    cli_backend: str | None = Field(default=None)
+    cli_bin: str | None = Field(default=None)
+    cli_model: str | None = Field(default=None)
+    cli_timeout_s: float = Field(default=120.0, gt=0.0)
 
     @classmethod
     def from_env(cls, environ: dict[str, str] | None = None) -> "LLMProviderSettings":
         source = environ if environ is not None else os.environ
-        return cls(
-            provider=source.get("LLM_PROVIDER", "mock"),
-            model=source.get("LLM_MODEL"),
-            mock_response=source.get("LLM_MOCK_RESPONSE"),
-            anthropic_api_key=source.get("ANTHROPIC_API_KEY"),
-            openai_api_key=source.get("OPENAI_API_KEY"),
-            openai_base_url=source.get("OPENAI_BASE_URL"),
-            gemini_api_key=source.get("GEMINI_API_KEY"),
-            gemini_model=source.get("GEMINI_MODEL"),
-            ollama_base_url=source.get(
-                "OLLAMA_BASE_URL", "http://127.0.0.1:11434"
-            ),
-            ollama_timeout_s=float(source.get("OLLAMA_TIMEOUT_S", "120")),
-        )
+        try:
+            return cls(
+                provider=source.get("LLM_PROVIDER", "mock"),
+                model=source.get("LLM_MODEL"),
+                mock_response=source.get("LLM_MOCK_RESPONSE"),
+                anthropic_api_key=source.get("ANTHROPIC_API_KEY"),
+                openai_api_key=source.get("OPENAI_API_KEY"),
+                openai_base_url=source.get("OPENAI_BASE_URL"),
+                gemini_api_key=source.get("GEMINI_API_KEY"),
+                gemini_model=source.get("GEMINI_MODEL"),
+                ollama_base_url=source.get(
+                    "OLLAMA_BASE_URL", "http://127.0.0.1:11434"
+                ),
+                ollama_timeout_s=float(source.get("OLLAMA_TIMEOUT_S", "120")),
+                cli_backend=source.get("CLI_BACKEND"),
+                cli_bin=source.get("CLI_BIN"),
+                cli_model=source.get("CLI_MODEL"),
+                cli_timeout_s=float(source.get("CLI_TIMEOUT_S", "120")),
+            )
+        except (ValidationError, ValueError) as exc:
+            raise LLMProviderConfigError(
+                f"Invalid LLM provider environment configuration: {exc}"
+            ) from exc
 
 
 def create_llm_provider(
@@ -152,6 +165,26 @@ def create_llm_provider(
             model=selected.model,
             base_url=selected.ollama_base_url,
             timeout_s=selected.ollama_timeout_s,
+        )
+
+    if selected.provider == "cli":
+        from modules.llm.adapters.cli import CliLLMProvider
+
+        backend = (selected.cli_backend or "").strip().lower()
+        if backend not in {"codex", "claude"}:
+            raise LLMProviderConfigError(
+                "LLM_PROVIDER=cli requires CLI_BACKEND=codex or claude. "
+                "Mock fallback is forbidden (DESIGN.md R10)."
+            )
+        if selected.cli_bin is not None and not selected.cli_bin.strip():
+            raise LLMProviderConfigError(
+                "CLI_BIN must not be blank. Mock fallback is forbidden (DESIGN.md R10)."
+            )
+        return CliLLMProvider(
+            backend=backend,
+            cli_bin=selected.cli_bin or backend,
+            model=selected.cli_model,
+            timeout_s=selected.cli_timeout_s,
         )
 
     raise LLMProviderConfigError(
