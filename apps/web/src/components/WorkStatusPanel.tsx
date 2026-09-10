@@ -265,7 +265,12 @@ export function WorkStatusPanel(): JSX.Element {
                 onClick={() => void advanceIntakeNextStep()}
                 data-testid="intake-next-step"
               >
-                {pendingIntakeNextStep ? "확인 중..." : "다음 경계 확인"}
+                {pendingIntakeNextStep
+                  ? "확인 중..."
+                  : latestRouteResult?.intake_decision?.metadata
+                        .capable_model_route === true
+                    ? "검토 대기 초안 생성(모델 호출)"
+                    : "다음 경계 확인"}
               </button>
               <span className={styles.routeDetail}>
                 CAD/STL/Orca 실행이나 출시 승인은 아직 시작하지 않습니다.

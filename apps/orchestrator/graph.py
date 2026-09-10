@@ -38,11 +38,15 @@ Phase 8B notes:
 import hashlib
 import json
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass
+from types import MappingProxyType
 
 from apps.orchestrator.dependencies import Dependencies, OrchestratorSettings
 from apps.orchestrator.exceptions import (
     ClarificationRequiredError,
+    OrchestratorConfigError,
+    PrefilterBlockedError,
     SessionStateError,
 )
 from apps.orchestrator.pipeline import (
@@ -72,7 +76,11 @@ from apps.orchestrator.schemas import (
 )
 from apps.orchestrator.sessions import (
     Session,
+    commit_route_clarification,
     make_event,
+    pending_clarification_view,
+    prepare_clarification_resolution,
+    prepare_route_clarification,
     register_clarification,
     register_gate,
     register_route_clarification,
@@ -83,15 +91,26 @@ from apps.orchestrator.sessions import (
 from modules.agents.planner.exceptions import PlannerAgentError
 from modules.agents.planner.schemas import PlannerRequest, PlannerResponse
 from modules.artifacts import get_artifact_root, subtask_dir, write_failure_manifest
+from modules.newbie_request.asset_authoring import (
+    CAPABLE_PREFILTER_BLOCKED_REASONS,
+    CAPABLE_PREFILTER_METADATA_KEY,
+)
 from modules.newbie_request.asset_draft_schemas import (
+    MANUAL_REVIEW_IP_DECISION,
     DraftAssetAuthoringRequest,
+    DraftAssetAuthoringResult,
     DraftAssetAuthoringStatus,
+    PrefilterManualReviewRecord,
 )
 from modules.newbie_request.llm_assist import (
     default_shadow_context,
     should_run_clarifier_shadow,
 )
-from modules.newbie_request.natural_language import NaturalLanguageRouteResult
+from modules.newbie_request.natural_language import (
+    NaturalLanguageRouteResult,
+    NewbieRequirementExtraction,
+    RequirementExtractionReason,
+)
 from modules.observability.trace import bind_trace
 from modules.slicer.schemas import MaterialPreset, PrinterProfile
 
@@ -104,16 +123,13 @@ _INTAKE_STATUS_TO_ACTION: dict[str, IntakeChoiceAction] = {
 
 _INTAKE_CHOICE_MESSAGE: dict[IntakeChoiceAction, str] = {
     IntakeChoiceAction.USE_EXISTING_RUNTIME_ASSET: (
-        "기존 검증 후보 사용 선택을 기록했습니다. "
-        "시각 품질과 출시 검토는 아직 필요합니다."
+        "기존 검증 후보 사용 선택을 기록했습니다. 시각 품질과 출시 검토는 아직 필요합니다."
     ),
     IntakeChoiceAction.REVIEW_EXISTING_DRAFT: (
-        "기존 에셋 초안 검토 선택을 기록했습니다. "
-        "새 초안은 만들지 않습니다."
+        "기존 에셋 초안 검토 선택을 기록했습니다. 새 초안은 만들지 않습니다."
     ),
     IntakeChoiceAction.ADAPT_SIMILAR_CANDIDATE: (
-        "유사 후보를 재사용 또는 수정 검토하는 선택을 기록했습니다. "
-        "새 초안은 만들지 않습니다."
+        "유사 후보를 재사용 또는 수정 검토하는 선택을 기록했습니다. 새 초안은 만들지 않습니다."
     ),
     IntakeChoiceAction.CREATE_NEW_DRAFT: (
         "새 에셋 초안 생성 요청을 기록했습니다. "
@@ -326,6 +342,18 @@ def _route_event_payload(route_view: NaturalLanguageRouteView) -> dict[str, obje
     return route_view.model_dump(mode="json")
 
 
+def _is_unknown_decorative_subject_gate(
+    source_decision: dict[str, object],
+) -> bool:
+    requirement = source_decision.get("requirement")
+    return (
+        isinstance(requirement, dict)
+        and requirement.get("category") == "decorative_keyring"
+        and requirement.get("clarification_reason")
+        == RequirementExtractionReason.UNKNOWN_DECORATIVE_SUBJECT.value
+    )
+
+
 def _allowed_intake_action(route: NaturalLanguageRouteView) -> IntakeChoiceAction:
     if route.intake_decision is None:
         if route.clarification_required or route.selected_route == "ask_user":
@@ -358,7 +386,9 @@ def _intake_choice_response(
         runtime_asset_id=intake.runtime_asset_id
         if intake is not None
         else route.runtime_asset_id,
-        draft_asset_id=intake.draft_asset_id if intake is not None else route.draft_asset_id,
+        draft_asset_id=intake.draft_asset_id
+        if intake is not None
+        else route.draft_asset_id,
         candidate_asset_ids=intake.candidate_asset_ids
         if intake is not None
         else route.candidate_asset_ids,
@@ -393,6 +423,156 @@ def _authoring_request_from_route(
     )
 
 
+_PREFILTER_BLOCKED_REASONS = frozenset(CAPABLE_PREFILTER_BLOCKED_REASONS.values())
+
+
+def _prefilter_from_authoring(
+    authoring_result: DraftAssetAuthoringResult,
+) -> dict[str, object] | None:
+    """Lift the structured pre-filter decision onto the public next-step view.
+
+    Fail-closed (fallback ADR item 6): when the authoring result carries one of the
+    fixed blocked reasons, the structured decision MUST be present as a dict.
+    Silently forwarding ``None`` would hide a preservation-contract violation and
+    leave the follow-up manual-review routing phase unable to identify the case.
+    """
+    raw = authoring_result.intake_metadata.get(CAPABLE_PREFILTER_METADATA_KEY)
+    if isinstance(raw, dict):
+        return dict(raw)
+    if authoring_result.reason in _PREFILTER_BLOCKED_REASONS:
+        raise SessionStateError(
+            "Capable-model pre-filter blocked the request "
+            f"({authoring_result.reason}) but intake metadata carries no "
+            f"structured '{CAPABLE_PREFILTER_METADATA_KEY}' dict "
+            f"(got {type(raw).__name__}); refusing to drop the safety verdict."
+        )
+    return None
+
+
+def _manual_review_record(
+    *,
+    deps: Dependencies,
+    prefilter: dict[str, object],
+    originating_prompt: str,
+) -> PrefilterManualReviewRecord:
+    """Build the durable record from the exact decision that blocked the call.
+
+    Nothing is re-derived: the four decision fields come from the same
+    ``prefilter`` dict handed to the response, and ``originating_prompt`` is the
+    prompt the pre-filter actually judged.
+    """
+    return PrefilterManualReviewRecord.model_validate(
+        {
+            "review_id": deps.review_id_factory(),
+            "created_at": deps.created_at_factory().isoformat(),
+            "originating_prompt": originating_prompt,
+            "decision": prefilter.get("decision"),
+            "matched_rule_id": prefilter.get("matched_rule_id"),
+            "reason_code": prefilter.get("reason_code"),
+            "user_message_ko": prefilter.get("user_message_ko"),
+        }
+    )
+
+
+#: Machine-readable ``prefilter_route_reason`` per blocked verdict on the raw
+#: ``/chat`` planner-input path (fallback ADR item 6). Mirrors the pipeline tables
+#: in ``apps.orchestrator.pipeline``: closed, and interpolating neither the
+#: variable ``reason_code`` nor any human-facing text, so a consumer branches on
+#: an exact string.
+#:
+#: These values are deliberately distinct from every mechanical / organic /
+#: capable-model route reason: "which entry point refused this" is exactly what
+#: an auditor needs and cannot re-derive from the verdict alone.
+#:
+#: This is NOT ``FallbackGateDecision.reason_code``. That field belongs to the
+#: rule tables and reaches the response and the durable record verbatim;
+#: overwriting it with a route reason would forge the audit trail.
+PLANNER_PREFILTER_ROUTE_REASONS: Mapping[str, str] = MappingProxyType(
+    {
+        "blocked_prohibited": "planner_prefilter_blocked_prohibited",
+        "manual_review_ip": "planner_prefilter_manual_review_ip",
+    }
+)
+
+
+def _blocked_chat_response(
+    deps: Dependencies, session: Session, message: str
+) -> ChatResponse | None:
+    """Run the IP/abuse guard on a raw ``/chat`` message; ``None`` means allow.
+
+    fallback ADR item 6: the guard must run *before* the agent is invoked — "do not
+    generate then catch". ``/chat`` is the last raw-NL ingress that reached an
+    LLM unchecked, and the planner is not the only consumer behind it: the
+    natural-language router and its opt-in clarifier shadow LLM both run earlier
+    in the turn. So this is called as the first action of the turn's work, not
+    merely before ``_invoke_planner``.
+
+    Returning a response instead of raising (the pipelines' ``PrefilterBlocked
+    Error`` style) is deliberate: a chat turn's refusal *is* its normal reply,
+    and the caller must not have to translate an exception into one.
+
+    An unmapped non-``allow`` verdict fails closed — a taxonomy that grew a
+    value this wiring has never seen must not be read as permission.
+    """
+    decision = deps.prefilter(message)
+    if decision.decision == "allow":
+        return None
+    route_reason = PLANNER_PREFILTER_ROUTE_REASONS.get(decision.decision)
+    if route_reason is None:
+        raise OrchestratorConfigError(
+            f"Unmapped IP/abuse pre-filter verdict {decision.decision!r} in "
+            "planner-input wiring; refusing to plan on an unknown safety verdict."
+        )
+    prefilter = decision.model_dump(mode="json")
+    # Neither the response nor the manual-review record has a field for the
+    # route reason, and inventing one would either be a dead constant or
+    # overwrite the rule table's ``reason_code``. So the routing fact is
+    # observed here instead — emitted inside the caller's ``bind_trace`` block,
+    # hence bound to the turn's trace and session.
+    #
+    # Both blocked verdicts log. ``blocked_prohibited`` is never queued, so for
+    # that verdict this line is the *only* audit trace that the request existed.
+    deps.logger.warning(
+        "planner.prefilter_blocked",
+        extra={
+            "session_id": session.session_id,
+            "decision": decision.decision,
+            "matched_rule_id": decision.matched_rule_id,
+            # The rule table's original, not the route reason above.
+            "reason_code": decision.reason_code,
+            "prefilter_route_reason": route_reason,
+        },
+    )
+    if decision.decision == MANUAL_REVIEW_IP_DECISION:
+        # Persisted before the response is built, with the same contract as the
+        # intake path: a storage fault propagates rather than being swallowed
+        # into a reply that claims a review request exists. Unlike approved
+        # execution (a background task that would strand the session at
+        # RUNNING), ``/chat`` is synchronous and the session state is untouched,
+        # so there is nothing to unwind and no reason to soften the failure.
+        #
+        # ``blocked_prohibited`` is not queued: fallback ADR asks for *block* and
+        # *route to manual review* as different outcomes, and the record schema
+        # refuses to model it anyway.
+        deps.draft_queue.save_manual_review(
+            _manual_review_record(
+                deps=deps,
+                prefilter=prefilter,
+                originating_prompt=message,
+            )
+        )
+    # The session stays in ``CREATED``: a refusal means "this request is not
+    # accepted", not "this session is broken". Moving it to FAILED or
+    # AWAITING_USER_INPUT would cost the user the ability to fix the prompt and
+    # retry, since ``/chat`` is only legal from ``CREATED``.
+    return ChatResponse(
+        session_id=session.session_id,
+        trace_id=session.trace_id,
+        state=session.state,
+        prefilter=prefilter,
+    )
+
+
 def _closed_next_step(
     *,
     session: Session,
@@ -402,11 +582,14 @@ def _closed_next_step(
     draft_asset: dict[str, object] | None = None,
     draft_authoring_status: str | None = None,
     draft_authoring_reason: str | None = None,
+    prefilter: dict[str, object] | None = None,
 ) -> IntakeNextStepView:
     draft_asset_id = choice.draft_asset_id
     if draft_asset is not None:
         raw_draft_asset_id = draft_asset.get("draft_asset_id")
-        draft_asset_id = raw_draft_asset_id if isinstance(raw_draft_asset_id, str) else None
+        draft_asset_id = (
+            raw_draft_asset_id if isinstance(raw_draft_asset_id, str) else None
+        )
     return IntakeNextStepView(
         session_id=session.session_id,
         action=choice.action,
@@ -421,6 +604,7 @@ def _closed_next_step(
         draft_asset=draft_asset,
         draft_authoring_status=draft_authoring_status,
         draft_authoring_reason=draft_authoring_reason,
+        prefilter=prefilter,
         review_required=True,
         runtime_execution_started=False,
         runtime_catalog_registered=False,
@@ -443,6 +627,9 @@ def _mechanical_pipeline(deps: Dependencies, log: logging.Logger) -> MechanicalP
         validator=deps.validator,
         slicer=deps.slicer,
         logger=log,
+        # fallback ADR item 6: the deterministic IP/abuse gate the composition root
+        # owns, injected so no execution pipeline can be assembled ungated.
+        prefilter=deps.prefilter,
         printer=_printer_from_settings(deps.settings),
         material=_material_from_settings(deps.settings),
         process_profile=deps.settings.default_process_profile,
@@ -464,7 +651,7 @@ def _mechanical_pipeline(deps: Dependencies, log: logging.Logger) -> MechanicalP
 
 
 def _organic_pipeline(deps: Dependencies, log: logging.Logger) -> OrganicPipeline:
-    return OrganicPipeline(organic=deps.organic, logger=log)
+    return OrganicPipeline(organic=deps.organic, logger=log, prefilter=deps.prefilter)
 
 
 def _answers_to_description_suffix(
@@ -506,7 +693,7 @@ def _merge_clarification_answers(
 async def run_chat_turn(
     deps: Dependencies, session: Session, message: str
 ) -> ChatResponse:
-    """One ``/chat`` turn: planner call → state transition → event emit.
+    """One ``/chat`` turn: pre-filter → planner call → state transition → event.
 
     Preconditions:
         session is locked by the caller (``SessionStore.lock_for``).
@@ -521,6 +708,19 @@ async def run_chat_turn(
         )
 
     with bind_trace(trace_id=session.trace_id, session_id=session.session_id):
+        # fallback ADR item 6: the very first thing this turn does, and inside the
+        # trace binding so the safety verdict's log line carries trace_id and
+        # session_id like everything else on the request path.
+        #
+        # Ordering is the contract, not an implementation detail: the router,
+        # its clarifier shadow LLM and the planner all live below this line, and
+        # so does the PLANNING transition. Blocking after the transition would
+        # send the user a "계획 중" signal for a request that was never planned —
+        # "do not generate then catch" applied to state signals too.
+        blocked = _blocked_chat_response(deps, session, message)
+        if blocked is not None:
+            return blocked
+
         previous_state = session.state
         session.state = SessionState.PLANNING
         await deps.sessions.publish(
@@ -653,7 +853,9 @@ async def run_chat_turn(
                 SessionEventKind.PLANNING_COMPLETED,
                 payload={
                     "subtask_count": len(subtask_views),
-                    "clarifying_question_count": len(planner_output.clarifying_questions),
+                    "clarifying_question_count": len(
+                        planner_output.clarifying_questions
+                    ),
                 },
             ),
         )
@@ -693,9 +895,7 @@ async def run_chat_turn(
                     payload={
                         "gate_id": approval_gate.gate_id,
                         "prompt": approval_gate.prompt,
-                        "subtask_ids": tuple(
-                            st.id for st in approval_gate.subtasks
-                        ),
+                        "subtask_ids": tuple(st.id for st in approval_gate.subtasks),
                     },
                 ),
             )
@@ -828,7 +1028,7 @@ async def continue_approval_execution(
                 f"subtasks while state is {session.state.value!r}."
             )
 
-        # Phase 9B (ADR-0005): durable per-session/subtask artifact root.
+        # Phase 9B (manifest ADR): durable per-session/subtask artifact root.
         # The Phase 8A ``tempfile.mkdtemp`` pattern is retired — artifacts
         # now live under ``ARTIFACT_ROOT/<session>/<subtask>/`` so the
         # manifest, the REST download route, and any future replay tool
@@ -839,6 +1039,7 @@ async def continue_approval_execution(
         organic_pipeline = _organic_pipeline(deps, log)
 
         for index, subtask in enumerate(approved_subtasks):
+
             async def publish_progress(progress: PipelineProgress) -> None:
                 await deps.sessions.publish(
                     session.session_id,
@@ -858,9 +1059,7 @@ async def continue_approval_execution(
                 ),
             )
 
-            subtask_sandbox = subtask_dir(
-                artifact_root, session.session_id, subtask.id
-            )
+            subtask_sandbox = subtask_dir(artifact_root, session.session_id, subtask.id)
             try:
                 if subtask.kind == "mechanical":
                     pipeline_payload = (
@@ -932,6 +1131,50 @@ async def continue_approval_execution(
                         ),
                     )
                     return
+                # fallback ADR item 6 (D5-b) — audit routing happens *inside* the
+                # generic failure path, never with an early return of its own.
+                #
+                # Approved execution runs as an ``asyncio`` background task
+                # whose done-callback only logs, so anything escaping this
+                # handler would leave the session pinned at RUNNING forever
+                # with no failure event. Routing is therefore best-effort: the
+                # save is attempted first, its failure is recorded in the
+                # manifest and the log, and control continues to the common
+                # failure manifest -> SUBTASK_FAILED -> RUNNING->FAILED path in
+                # every case. A lost audit write is bad; a zombie session that
+                # never reports anything is worse.
+                #
+                # ``blocked_prohibited`` is deliberately not queued: fallback ADR
+                # asks for *block* and *route to manual review* as different
+                # outcomes, and the record schema refuses to model it anyway.
+                prefilter_route_reason = getattr(exc, "prefilter_route_reason", None)
+                prefilter_save_error: str | None = None
+                if (
+                    isinstance(exc, PrefilterBlockedError)
+                    and exc.decision.decision == MANUAL_REVIEW_IP_DECISION
+                ):
+                    try:
+                        deps.draft_queue.save_manual_review(
+                            _manual_review_record(
+                                deps=deps,
+                                # The original four fields, unmodified: the
+                                # rule table's ``reason_code`` reaches the
+                                # durable record as-is and is never replaced by
+                                # ``prefilter_route_reason``.
+                                prefilter=exc.decision.model_dump(mode="json"),
+                                originating_prompt=subtask.description,
+                            )
+                        )
+                    except Exception as save_exc:
+                        prefilter_save_error = f"{type(save_exc).__name__}: {save_exc}"
+                        log.exception(
+                            "prefilter_manual_review_save_failed",
+                            extra={
+                                "session_id": session.session_id,
+                                "subtask_id": subtask.id,
+                                "prefilter_route_reason": prefilter_route_reason,
+                            },
+                        )
                 failure_stage = getattr(exc, "stage", subtask.kind)
                 failure_metadata = {
                     "missing_features": tuple(getattr(exc, "missing_features", ())),
@@ -944,16 +1187,12 @@ async def continue_approval_execution(
                     "decision_detail": getattr(exc, "decision_detail", None),
                     "decision": getattr(exc, "decision_metadata", {}),
                     "cad_coder_error_code": getattr(exc, "error_code", None),
-                    "cad_coder_error_metadata": dict(
-                        getattr(exc, "metadata", {})
-                    ),
+                    "cad_coder_error_metadata": dict(getattr(exc, "metadata", {})),
                     "provider": getattr(exc, "provider", None),
                     "model": getattr(exc, "model", None),
                     "retry_count": getattr(exc, "retry_count", None),
                     "repair_attempts": getattr(exc, "repair_attempts", None),
-                    "fallback_recommended": getattr(
-                        exc, "fallback_recommended", None
-                    ),
+                    "fallback_recommended": getattr(exc, "fallback_recommended", None),
                     "template_id": getattr(exc, "template_id", None),
                     "template_fallback_error_code": getattr(
                         exc, "template_fallback_error_code", None
@@ -961,6 +1200,15 @@ async def continue_approval_execution(
                     "template_fallback_error_metadata": dict(
                         getattr(exc, "template_fallback_error_metadata", {})
                     ),
+                    # fallback ADR item 6: which pipeline blocked with which
+                    # verdict, self-describing so a consumer never re-derives
+                    # it from ``subtask.kind``. ``None`` for every other
+                    # failure, like the sibling optional keys above.
+                    "prefilter_route_reason": prefilter_route_reason,
+                    # Honest record of a failed audit write (D5-b): the session
+                    # still reaches FAILED, but the manifest says the
+                    # manual-review request was not persisted.
+                    "prefilter_manual_review_save_error": prefilter_save_error,
                 }
                 log.exception(
                     "subtask_failed",
@@ -970,7 +1218,7 @@ async def continue_approval_execution(
                         "kind": subtask.kind,
                     },
                 )
-                # ADR-0005: emit a diagnostic failure manifest so UI /
+                # manifest ADR: emit a diagnostic failure manifest so UI /
                 # replay / audit can see *why* this subtask failed
                 # without grepping logs by trace_id.
                 failure_manifest_path = write_failure_manifest(
@@ -996,22 +1244,14 @@ async def continue_approval_execution(
                             "stage": failure_stage,
                             "error_type": type(exc).__name__,
                             "detail": str(exc),
-                            "missing_features": failure_metadata[
-                                "missing_features"
-                            ],
+                            "missing_features": failure_metadata["missing_features"],
                             "violated_constraints": failure_metadata[
                                 "violated_constraints"
                             ],
                             "retry_hint": failure_metadata["retry_hint"],
-                            "decision_action": failure_metadata[
-                                "decision_action"
-                            ],
-                            "decision_reason": failure_metadata[
-                                "decision_reason"
-                            ],
-                            "decision_detail": failure_metadata[
-                                "decision_detail"
-                            ],
+                            "decision_action": failure_metadata["decision_action"],
+                            "decision_reason": failure_metadata["decision_reason"],
+                            "decision_detail": failure_metadata["decision_detail"],
                             "cad_coder_error_code": failure_metadata[
                                 "cad_coder_error_code"
                             ],
@@ -1021,9 +1261,7 @@ async def continue_approval_execution(
                             "provider": failure_metadata["provider"],
                             "model": failure_metadata["model"],
                             "retry_count": failure_metadata["retry_count"],
-                            "repair_attempts": failure_metadata[
-                                "repair_attempts"
-                            ],
+                            "repair_attempts": failure_metadata["repair_attempts"],
                             "fallback_recommended": failure_metadata[
                                 "fallback_recommended"
                             ],
@@ -1033,6 +1271,12 @@ async def continue_approval_execution(
                             ],
                             "template_fallback_error_metadata": failure_metadata[
                                 "template_fallback_error_metadata"
+                            ],
+                            "prefilter_route_reason": failure_metadata[
+                                "prefilter_route_reason"
+                            ],
+                            "prefilter_manual_review_save_error": failure_metadata[
+                                "prefilter_manual_review_save_error"
                             ],
                             "manifest_path": str(failure_manifest_path),
                         },
@@ -1131,6 +1375,122 @@ async def start_clarification_resolution(
                 f"Session '{session.session_id}' is {session.state.value}; "
                 "/clarify is only allowed while awaiting user input."
             )
+        gate = prepare_clarification_resolution(session, clarification_id, answers)
+        if (
+            deps.settings.capable_draft_route_enabled
+            and _is_unknown_decorative_subject_gate(gate.source_decision)
+        ):
+            required_question_ids = tuple(
+                question.id for question in gate.questions if question.required
+            )
+            answer_values = tuple(
+                answers[question_id] for question_id in required_question_ids
+            )
+            if len(answer_values) != 1 or not isinstance(answer_values[0], str):
+                raise SessionStateError(
+                    "Decorative subject clarification requires one text answer."
+                )
+            subject = answer_values[0].strip()
+            if not subject:
+                raise SessionStateError(
+                    "Decorative subject clarification answer must not be blank."
+                )
+
+            source_requirement_payload = gate.source_decision.get("requirement")
+            if not isinstance(source_requirement_payload, dict):
+                raise SessionStateError(
+                    "Route clarification source is missing its requirement snapshot."
+                )
+            source_requirement = NewbieRequirementExtraction.model_validate(
+                source_requirement_payload
+            )
+            route_result = (
+                deps.natural_language_router.resolve_decorative_subject_clarification(
+                    source_requirement,
+                    subject,
+                    capable_draft_route_enabled=(
+                        deps.settings.capable_draft_route_enabled
+                    ),
+                )
+            )
+            next_revision = session.route_revision + 1
+            route_view = _route_to_view(route_result, route_revision=next_revision)
+            replacement_gate = (
+                prepare_route_clarification(
+                    session,
+                    questions=_route_questions(route_result),
+                    source_decision=_route_event_payload(route_view),
+                    reason=route_result.reason.value,
+                )
+                if route_result.clarification_required
+                else None
+            )
+
+            resolve_clarification(session, clarification_id, answers)
+            session.route_revision = next_revision
+            session.latest_route_result = route_view
+            session.latest_intake_choice = None
+            session.latest_intake_next_step = None
+            if replacement_gate is None:
+                transition(
+                    session,
+                    SessionState.CREATED,
+                    allowed_from=(SessionState.AWAITING_USER_INPUT,),
+                )
+            else:
+                commit_route_clarification(session, replacement_gate)
+
+            await deps.sessions.publish(
+                session.session_id,
+                make_event(
+                    session,
+                    SessionEventKind.CLARIFICATION_RESOLVED,
+                    payload={
+                        "clarification_id": gate.clarification_id,
+                        "subtask_id": gate.subtask_id,
+                        "answered_question_ids": tuple(answers.keys()),
+                        "requirement_snapshot_id": gate.requirement_snapshot_id,
+                    },
+                ),
+            )
+            await deps.sessions.publish(
+                session.session_id,
+                make_event(
+                    session,
+                    SessionEventKind.NATURAL_LANGUAGE_ROUTE_SELECTED,
+                    payload=_route_event_payload(route_view),
+                ),
+            )
+            if replacement_gate is None:
+                await deps.sessions.publish(
+                    session.session_id,
+                    make_event(
+                        session,
+                        SessionEventKind.STATE_CHANGED,
+                        payload={
+                            "from": SessionState.AWAITING_USER_INPUT.value,
+                            "to": session.state.value,
+                        },
+                    ),
+                )
+            else:
+                await deps.sessions.publish(
+                    session.session_id,
+                    make_event(
+                        session,
+                        SessionEventKind.CLARIFICATION_REQUESTED,
+                        payload=replacement_gate.to_view(session.trace_id).model_dump(
+                            mode="json"
+                        ),
+                    ),
+                )
+            return ClarificationExecutionPlan(
+                clarification_id=gate.clarification_id,
+                resume_subtasks=(),
+                approval_gate_id=gate.approval_gate_id,
+                plan_snapshot_id=gate.plan_snapshot_id,
+            )
+
         gate = resolve_clarification(session, clarification_id, answers)
         await deps.sessions.publish(
             session.session_id,
@@ -1228,6 +1588,8 @@ async def run_clarification_resolution(
         clarification_id=clarification_id,
         accepted=True,
         state=session.state,
+        route_result=session.latest_route_result,
+        pending_clarification=pending_clarification_view(session),
     )
 
 
@@ -1274,7 +1636,10 @@ async def record_intake_choice(
                 f"intake route; expected {allowed_action.value!r}."
             )
         if request.action is IntakeChoiceAction.CREATE_NEW_DRAFT:
-            if route.intake_decision is None or not route.intake_decision.new_draft_allowed:
+            if (
+                route.intake_decision is None
+                or not route.intake_decision.new_draft_allowed
+            ):
                 raise SessionStateError(
                     "New draft creation is only allowed for new_draft_allowed intake."
                 )
@@ -1336,38 +1701,104 @@ async def record_intake_next_step(
 
         status = _INTAKE_NEXT_STEP_STATUS[choice.action]
         if choice.action is IntakeChoiceAction.CREATE_NEW_DRAFT:
-            if route.intake_decision is None or not route.intake_decision.new_draft_allowed:
+            if (
+                route.intake_decision is None
+                or not route.intake_decision.new_draft_allowed
+            ):
                 raise SessionStateError(
                     "Draft authoring is only allowed for new_draft_allowed intake."
                 )
-            authoring_result = deps.asset_authoring.handle(
-                _authoring_request_from_route(route)
+            authoring_request = _authoring_request_from_route(route)
+            authoring_result = await deps.asset_authoring.handle_with_capable_fallback(
+                authoring_request
             )
-            if authoring_result.status is not DraftAssetAuthoringStatus.DRAFT_CREATED:
+            if authoring_result.status is DraftAssetAuthoringStatus.DRAFT_CREATED:
+                if authoring_result.draft_asset is None:
+                    raise SessionStateError("Draft authoring returned no draft asset.")
+                draft = authoring_result.draft_asset
+                if (
+                    draft.release_allowed
+                    or draft.runtime_catalog_registered
+                    or draft.visual_quality_status.value != "review_required"
+                    or draft.legal_review_status.value != "not_reviewed"
+                ):
+                    raise SessionStateError(
+                        "Draft authoring returned a draft that is not review-closed."
+                    )
+                # fallback ADR Item 5 (persistence slice): the draft must outlive the
+                # session, otherwise "draft-only + human review" has nothing for a
+                # human to review later. Every draft of this branch is persisted —
+                # capable-model generated and deterministic cat-keyring alike — so
+                # the queue never disagrees with what the caller was told.
+                #
+                # A storage failure is a server defect, not a client state
+                # conflict: it deliberately propagates (HTTP 500) instead of being
+                # translated into SessionStateError (HTTP 409) or swallowed into a
+                # `draft_created` response that lies about what was written (R10).
+                # Because the boundary state and the success event are only
+                # committed after this call, a failure leaves neither behind.
+                deps.draft_queue.save_draft(draft)
+                response = _closed_next_step(
+                    session=session,
+                    route=route,
+                    choice=choice,
+                    status=status,
+                    draft_asset=draft.model_dump(mode="json"),
+                    draft_authoring_status=authoring_result.status.value,
+                    draft_authoring_reason=authoring_result.reason,
+                )
+            elif authoring_result.status is DraftAssetAuthoringStatus.ASK_USER:
+                # Capable-model fallback declined (generator absent, recoverable
+                # generation failure, sandbox violation, or an IP/abuse pre-filter
+                # block raised before the model ran): stay on a closed
+                # information-needed boundary and preserve the structured reason
+                # rather than collapsing into a SessionStateError.
+                #
+                # The structured verdict is lifted once and reused, so what is
+                # persisted and what the caller is told cannot disagree. The
+                # fail-closed contract inside `_prefilter_from_authoring`
+                # (blocked reason without a structured dict -> SessionStateError)
+                # is unchanged.
+                prefilter = _prefilter_from_authoring(authoring_result)
+                if (
+                    prefilter is not None
+                    and prefilter.get("decision") == MANUAL_REVIEW_IP_DECISION
+                ):
+                    # fallback ADR Item 6: a manual-review verdict that only shows up
+                    # in the response is not "routed to manual review" — nobody
+                    # can look at it later. Persist it before the boundary and
+                    # the success event are committed, with the same failure
+                    # contract as draft persistence: a storage fault propagates
+                    # (HTTP 500), it is not translated into SessionStateError
+                    # (409) nor swallowed into a response that claims a review
+                    # request exists. On failure neither the boundary nor the
+                    # event is left behind (atomicity).
+                    #
+                    # Only this verdict is routed. fallback ADR asks for *block* and
+                    # *route to manual review* as different outcomes, and a
+                    # prohibited category sitting in a review queue would read as
+                    # something a reviewer may approve — that case stops at the
+                    # structured blocked response.
+                    deps.draft_queue.save_manual_review(
+                        _manual_review_record(
+                            deps=deps,
+                            prefilter=prefilter,
+                            originating_prompt=authoring_request.user_prompt_ko,
+                        )
+                    )
+                response = _closed_next_step(
+                    session=session,
+                    route=route,
+                    choice=choice,
+                    status=IntakeNextStepStatus.INFORMATION_NEEDED,
+                    draft_authoring_status=authoring_result.status.value,
+                    draft_authoring_reason=authoring_result.reason,
+                    prefilter=prefilter,
+                )
+            else:
                 raise SessionStateError(
                     "Draft authoring did not create a new draft; re-run asset intake."
                 )
-            if authoring_result.draft_asset is None:
-                raise SessionStateError("Draft authoring returned no draft asset.")
-            draft = authoring_result.draft_asset
-            if (
-                draft.release_allowed
-                or draft.runtime_catalog_registered
-                or draft.visual_quality_status.value != "review_required"
-                or draft.legal_review_status.value != "not_reviewed"
-            ):
-                raise SessionStateError(
-                    "Draft authoring returned a draft that is not review-closed."
-                )
-            response = _closed_next_step(
-                session=session,
-                route=route,
-                choice=choice,
-                status=status,
-                draft_asset=draft.model_dump(mode="json"),
-                draft_authoring_status=authoring_result.status.value,
-                draft_authoring_reason=authoring_result.reason,
-            )
         else:
             response = _closed_next_step(
                 session=session,
@@ -1389,6 +1820,7 @@ async def record_intake_next_step(
 
 
 __all__ = [
+    "PLANNER_PREFILTER_ROUTE_REASONS",
     "ApprovalExecutionPlan",
     "ClarificationExecutionPlan",
     "continue_approval_execution",

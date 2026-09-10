@@ -178,6 +178,12 @@ class LightweightRequirementExtractor:
             questions=("만들 물건의 종류와 대략적인 크기를 알려주세요.",),
         )
 
+    def match_trademark(self, text: str) -> TrademarkBlockedSubject | None:
+        return self._trademark_table.match(text)
+
+    def match_aliases(self, text: str) -> tuple[SubjectAliasRow, ...]:
+        return self._alias_table.matches(text)
+
 
 class NaturalLanguageRouteIntegrator:
     """Routes extracted beginner prompts without silent freeform fallback."""
@@ -212,6 +218,133 @@ class NaturalLanguageRouteIntegrator:
         if requirement.category is None:
             return None
         return self._route_extraction(user_prompt_ko, requirement)
+
+    def resolve_decorative_subject_clarification(
+        self,
+        source_requirement: NewbieRequirementExtraction,
+        answer: str,
+        *,
+        capable_draft_route_enabled: bool,
+    ) -> NaturalLanguageRouteResult:
+        """Resolve an unknown keyring subject without discarding route context."""
+        if (
+            source_requirement.category != "decorative_keyring"
+            or source_requirement.clarification_reason
+            is not RequirementExtractionReason.UNKNOWN_DECORATIVE_SUBJECT
+        ):
+            raise ValueError("Unsupported route clarification source.")
+
+        blocked = self._extractor.match_trademark(answer)
+        if blocked is not None:
+            requirement = source_requirement.model_copy(
+                update={
+                    "subject": blocked.subject,
+                    "style": blocked.style or source_requirement.style,
+                    "clarification_required": True,
+                    "clarification_reason": (
+                        RequirementExtractionReason.TRADEMARK_BLOCKED_SUBJECT
+                    ),
+                    "clarification_questions": blocked.questions,
+                    "reason": RequirementExtractionReason.TRADEMARK_BLOCKED_SUBJECT,
+                }
+            )
+            return self._route_extraction(
+                source_requirement.user_prompt_ko,
+                requirement,
+            )
+
+        alias_matches = self._extractor.match_aliases(answer)
+        known_matches = tuple(row for row in alias_matches if row.subject is not None)
+        if alias_matches and (len(alias_matches) != 1 or len(known_matches) != 1):
+            questions = (
+                alias_matches[0].questions
+                if len(alias_matches) == 1 and alias_matches[0].questions
+                else ("하나의 동물 주제를 선택해 주세요.",)
+            )
+            requirement = source_requirement.model_copy(
+                update={
+                    "clarification_required": True,
+                    "clarification_reason": (
+                        RequirementExtractionReason.AMBIGUOUS_DECORATIVE_SUBJECT
+                    ),
+                    "clarification_questions": questions,
+                    "reason": RequirementExtractionReason.AMBIGUOUS_DECORATIVE_SUBJECT,
+                }
+            )
+            return self._route_extraction(
+                source_requirement.user_prompt_ko,
+                requirement,
+            )
+
+        if known_matches:
+            alias = known_matches[0]
+            requirement = source_requirement.model_copy(
+                update={
+                    "request_id": alias.request_id,
+                    "subject": alias.subject,
+                    "style": alias.style or source_requirement.style,
+                    "clarification_required": False,
+                    "clarification_reason": None,
+                    "clarification_questions": (),
+                    "confidence": alias.confidence,
+                    "reason": RequirementExtractionReason(alias.route_reason),
+                }
+            )
+            return self._route_extraction(
+                source_requirement.user_prompt_ko,
+                requirement,
+            )
+
+        requirement = source_requirement.model_copy(
+            update={
+                "subject": answer,
+                "clarification_required": False,
+                "clarification_reason": None,
+                "clarification_questions": (),
+                "confidence": 0.9,
+                "reason": RequirementExtractionReason.DRAFTABLE_DECORATIVE_KEYRING_SUBJECT,
+            }
+        )
+        if not capable_draft_route_enabled:
+            return self._route_extraction(
+                source_requirement.user_prompt_ko,
+                requirement.model_copy(
+                    update={
+                        "clarification_required": True,
+                        "clarification_reason": (
+                            RequirementExtractionReason.UNKNOWN_DECORATIVE_SUBJECT
+                        ),
+                        "clarification_questions": (
+                            "지원 가능한 동물 주제인지 확인이 필요합니다.",
+                        ),
+                        "reason": RequirementExtractionReason.UNKNOWN_DECORATIVE_SUBJECT,
+                    }
+                ),
+            )
+        route = self._route_extraction(source_requirement.user_prompt_ko, requirement)
+        if (
+            capable_draft_route_enabled
+            and route.intake_decision is not None
+            and route.intake_decision.new_draft_allowed
+        ):
+            intake = route.intake_decision.model_copy(
+                update={
+                    "metadata": {
+                        **route.intake_decision.metadata,
+                        "capable_model_route": True,
+                    }
+                }
+            )
+            return route.model_copy(
+                update={
+                    "selected_route": NewbieRoute.DRAFT_ASSET,
+                    "reason": RouteIntegrationReason.DRAFT_AUTHORING_REQUIRED,
+                    "clarification_required": False,
+                    "clarification_questions": (),
+                    "intake_decision": intake,
+                }
+            )
+        return route
 
     def _route_extraction(
         self,

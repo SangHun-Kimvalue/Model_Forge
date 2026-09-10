@@ -9,6 +9,7 @@ not trigger self-healing retries.
 
 from apps.orchestrator.schemas import ClarificationQuestion
 from modules.orchestrator_decision.schemas import DecisionResult
+from modules.template.ip_abuse_prefilter import FallbackGateDecision
 
 
 class OrchestratorError(Exception):
@@ -47,6 +48,40 @@ class ClarificationRequiredError(OrchestratorError):
         self.questions = questions
 
 
+class PrefilterBlockedError(OrchestratorError):
+    """Raised by a pipeline when the IP/abuse pre-filter blocks a subtask.
+
+    fallback ADR item 6 requires the deterministic guard to run *before* the agent
+    is invoked ("do not generate then catch"), so this is raised ahead of the
+    first generation call and ahead of the first progress event: no LLM
+    invocation, no artifacts, no "생성 시작" progress that would be a lie.
+
+    Signalled as an exception rather than a return value because
+    ``execute``'s return type is the *success* bundle; folding a block into it
+    would let a caller that forgets to check silently proceed.
+
+    Carries the whole :class:`FallbackGateDecision` — never a flattened string
+    — because the manual-review routing in the graph persists the original
+    four fields, and ``reason_code`` in particular is owned by the rule table
+    and must reach the audit record unmodified. ``prefilter_route_reason`` is a
+    *separate* fixed value identifying which pipeline blocked with which
+    verdict; it never overwrites ``decision.reason_code``.
+    """
+
+    stage = "prefilter"
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        decision: FallbackGateDecision,
+        prefilter_route_reason: str,
+    ) -> None:
+        super().__init__(message)
+        self.decision = decision
+        self.prefilter_route_reason = prefilter_route_reason
+
+
 class SessionStateError(OrchestratorError):
     """Raised when an operation is not legal in the current session state."""
 
@@ -61,6 +96,7 @@ __all__ = [
     "ClarificationRequiredError",
     "OrchestratorConfigError",
     "OrchestratorError",
+    "PrefilterBlockedError",
     "SessionNotFoundError",
     "SessionStateError",
 ]

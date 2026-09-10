@@ -9,6 +9,7 @@ execute the selected curated asset through the local manufacturing runtime.
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
@@ -31,7 +32,12 @@ from modules.artifacts import (
     write_failure_manifest,
     write_manifest,
 )
-from modules.cad_mechanical.schemas import CADDialect, GenerationRequest, SandboxLimits
+from modules.cad_mechanical.schemas import (
+    CADDialect,
+    GenerationRequest,
+    GenerationResult,
+    SandboxLimits,
+)
 from modules.newbie_request import (
     DecorativeAssetEntry,
     DecorativeAssetKeyringRenderer,
@@ -54,7 +60,109 @@ from modules.newbie_request import (
     require_printability_for_slicing,
 )
 from modules.newbie_request.schemas import L2GeometryReport
-from modules.slicer.schemas import MaterialPreset, PrinterProfile, SliceRequest
+from modules.slicer.schemas import (
+    MaterialPreset,
+    PrinterProfile,
+    SliceRequest,
+    SliceResult,
+)
+
+
+@dataclass(frozen=True, slots=True)
+class ManufacturingMeshStage:
+    """``cad.generate`` → L2 → printability까지의 typed 결과.
+
+    공통 제조 tail의 앞 절반이다. preview·curated ``review_metadata``·artifact
+    refs·manifest·세션 이벤트는 **여기 들어오지 않는다** — 그것들은 호출부마다
+    의미가 다르고(curated asset vs 승인된 fallback draft), 공유 helper가 흡수하면
+    한쪽 호출부의 metadata 의미가 다른 쪽으로 새어 나간다.
+    """
+
+    cad_result: GenerationResult
+    l2_report: L2GeometryReport
+    printability_report: PrintabilityReport
+
+
+async def generate_manufacturing_mesh(
+    deps: Dependencies,
+    *,
+    prompt: str,
+    source_code: str,
+    session_id: str,
+    output_dir: Path,
+    l2_failure_message: str,
+) -> ManufacturingMeshStage:
+    """sandbox OpenSCAD 컴파일 → L2 geometry → printability guard를 수행한다.
+
+    OpenSCAD SCAD 문자열을 실제로 실행하는 유일한 지점이며, 입력이 무엇이
+    만든 SCAD인지는 알지 않는다(curated renderer / capable-model draft 공통).
+
+    ``l2_failure_message``만 호출부가 정하는 이유: 그 문장은 실패 manifest와
+    세션 이벤트에 그대로 실려 **운영자가 읽는** 문구이고, curated runtime asset
+    실행과 fallback draft 실행은 서로 다른 대상을 가리켜야 한다. 판정 **로직**은
+    공유하고 문장만 호출부가 소유한다.
+    """
+
+    cad_result = await deps.cad.generate(
+        GenerationRequest(
+            prompt=prompt,
+            code=source_code,
+            dialect=CADDialect.OPENSCAD,
+            session_id=session_id,
+            output_dir=output_dir,
+            format="stl",
+            limits=SandboxLimits(timeout_s=60.0),
+        )
+    )
+    l2_report = evaluate_assembly_stl(cad_result.path)
+    if not l2_report.passed:
+        raise SessionStateError(l2_failure_message)
+    printability_report = evaluate_printability(l2_report)
+    require_printability_for_slicing(printability_report)
+    return ManufacturingMeshStage(
+        cad_result=cad_result,
+        l2_report=l2_report,
+        printability_report=printability_report,
+    )
+
+
+def require_real_orca_gcode(gcode_path: Path) -> str:
+    """mock G-code를 성공으로 읽지 않는다(R10). 이 판정의 유일한 소유자다.
+
+    읽기 범위(선두 4000자)·``errors="replace"``·예외 타입·문구는 12Y가 쓰던 것을
+    **문자 그대로** 보존한다. 복제 대신 공유이므로 "한쪽만 고쳐지는 날"이 없다.
+    """
+
+    gcode_head = gcode_path.read_text(encoding="utf-8", errors="replace")[:4000]
+    if "OrcaSlicer" not in gcode_head or "mock gcode" in gcode_head.lower():
+        raise SessionStateError(
+            "Runtime asset slicing did not produce real Orca G-code."
+        )
+    return gcode_head
+
+
+async def slice_manufacturing_mesh(
+    deps: Dependencies,
+    *,
+    mesh_path: Path,
+    session_id: str,
+    output_dir: Path,
+) -> SliceResult:
+    """공통 제조 tail의 뒷 절반 — 슬라이싱 + real-Orca G-code 검사."""
+
+    slice_result = await deps.slicer.slice(
+        SliceRequest(
+            mesh_path=mesh_path,
+            mesh_format="stl",
+            session_id=session_id,
+            output_dir=output_dir,
+            printer=_printer_from_deps(deps),
+            material=_material_from_deps(deps),
+            process_profile=deps.settings.default_process_profile,
+        )
+    )
+    require_real_orca_gcode(slice_result.gcode_path)
+    return slice_result
 
 
 async def execute_selected_runtime_asset(
@@ -143,22 +251,17 @@ async def execute_selected_runtime_asset(
 
     try:
         rendered = DecorativeAssetKeyringRenderer().render(asset)
-        cad_result = await deps.cad.generate(
-            GenerationRequest(
-                prompt=str(route.requirement.get("user_prompt_ko") or asset.asset_id),
-                code=rendered.source_code,
-                dialect=CADDialect.OPENSCAD,
-                session_id=session.session_id,
-                output_dir=output_dir,
-                format="stl",
-                limits=SandboxLimits(timeout_s=60.0),
-            )
+        mesh_stage = await generate_manufacturing_mesh(
+            deps,
+            prompt=str(route.requirement.get("user_prompt_ko") or asset.asset_id),
+            source_code=rendered.source_code,
+            session_id=session.session_id,
+            output_dir=output_dir,
+            l2_failure_message="Runtime asset STL failed L2 geometry validation.",
         )
-        l2_report = evaluate_assembly_stl(cad_result.path)
-        if not l2_report.passed:
-            raise SessionStateError("Runtime asset STL failed L2 geometry validation.")
-        printability_report = evaluate_printability(l2_report)
-        require_printability_for_slicing(printability_report)
+        cad_result = mesh_stage.cad_result
+        l2_report = mesh_stage.l2_report
+        printability_report = mesh_stage.printability_report
 
         review_metadata = _runtime_visual_metadata(
             asset=asset,
@@ -169,24 +272,12 @@ async def execute_selected_runtime_asset(
             route_snapshot_id=route.route_snapshot_id,
         )
 
-        slice_result = await deps.slicer.slice(
-            SliceRequest(
-                mesh_path=cad_result.path,
-                mesh_format="stl",
-                session_id=session.session_id,
-                output_dir=output_dir,
-                printer=_printer_from_deps(deps),
-                material=_material_from_deps(deps),
-                process_profile=deps.settings.default_process_profile,
-            )
+        slice_result = await slice_manufacturing_mesh(
+            deps,
+            mesh_path=cad_result.path,
+            session_id=session.session_id,
+            output_dir=output_dir,
         )
-        gcode_head = slice_result.gcode_path.read_text(
-            encoding="utf-8", errors="replace"
-        )[:4000]
-        if "OrcaSlicer" not in gcode_head or "mock gcode" in gcode_head.lower():
-            raise SessionStateError(
-                "Runtime asset slicing did not produce real Orca G-code."
-            )
 
         preview_path = output_dir / f"{asset_id}-preview.png"
         _write_stl_preview(cad_result.path, preview_path)
@@ -425,4 +516,10 @@ def _write_stl_preview(stl_path: Path, preview_path: Path) -> None:
         raise SessionStateError("Runtime asset preview image was not created.")
 
 
-__all__ = ["execute_selected_runtime_asset"]
+__all__ = [
+    "ManufacturingMeshStage",
+    "execute_selected_runtime_asset",
+    "generate_manufacturing_mesh",
+    "require_real_orca_gcode",
+    "slice_manufacturing_mesh",
+]

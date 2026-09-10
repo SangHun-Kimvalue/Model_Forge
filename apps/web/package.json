@@ -13,7 +13,8 @@
     "e2e": "playwright test",
     "e2e:route-live": "playwright test --config playwright.route-live.config.ts",
     "e2e:orca-live": "playwright test --config playwright.orca-live.config.ts",
-    "e2e:install": "playwright install --with-deps chromium"
+    "e2e:install": "playwright install --with-deps chromium",
+    "e2e:capable-ui-live": "playwright test --config playwright.capable-ui-live.config.ts"
   },
   "dependencies": {
     "@react-three/drei": "^9.114.0",

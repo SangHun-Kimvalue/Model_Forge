@@ -1,10 +1,15 @@
 """Newbie request catalog and Assembly IR spike contracts."""
 
 from modules.newbie_request.asset_authoring import (
+    CAPABLE_PREFILTER_BLOCKED_REASONS,
+    CAPABLE_PREFILTER_METADATA_KEY,
     AssetAuthoringError,
     AssetAuthoringPipeline,
+    CapableModelDraftGenerator,
     DeterministicCatKeyringDraftGenerator,
     DraftAssetKeyringRenderer,
+    DraftPrefilterBlockedError,
+    DraftSandboxViolationError,
     draft_asset_manifest_metadata,
 )
 from modules.newbie_request.asset_catalog import (
@@ -37,6 +42,8 @@ from modules.newbie_request.asset_draft_schemas import (
     DraftAssetEvidenceRecord,
     DraftAssetReviewRecord,
     DraftReviewDecision,
+    PrefilterManualReviewDisposition,
+    PrefilterManualReviewRecord,
 )
 from modules.newbie_request.asset_intake import (
     AssetFolderPolicy,
@@ -205,6 +212,8 @@ __all__ = [
     "DEFAULT_SUBJECT_CATEGORY_LABELS_PATH",
     "DEFAULT_SUBJECT_ALIAS_TABLE_PATH",
     "DEFAULT_TRADEMARK_BLOCKED_SUBJECTS_PATH",
+    "CAPABLE_PREFILTER_BLOCKED_REASONS",
+    "CAPABLE_PREFILTER_METADATA_KEY",
     "Anchor",
     "AssetCandidateExplanation",
     "AssetCandidateExplanationSource",
@@ -219,6 +228,7 @@ __all__ = [
     "AssetIntakeStatus",
     "AssetAuthoringPipeline",
     "AssetLifecycleStatus",
+    "CapableModelDraftGenerator",
     "AssemblyComponent",
     "AssemblyOpenSCADRenderer",
     "AssemblyRenderError",
@@ -249,7 +259,9 @@ __all__ = [
     "DraftAssetEvidenceRecord",
     "DraftAssetKeyringRenderer",
     "DraftAssetReviewRecord",
+    "DraftPrefilterBlockedError",
     "DraftReviewDecision",
+    "DraftSandboxViolationError",
     "DraftQueueError",
     "DraftReviewQueue",
     "DraftSpecProposal",
@@ -291,6 +303,8 @@ __all__ = [
     "NewbieRequirementExtraction",
     "NewbieRouteSelector",
     "QualityPolicy",
+    "PrefilterManualReviewDisposition",
+    "PrefilterManualReviewRecord",
     "PrintabilityGuardPolicy",
     "PrintabilityGateError",
     "PrintabilityIssue",

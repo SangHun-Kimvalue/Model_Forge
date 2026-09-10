@@ -164,7 +164,18 @@ function applyChatResponse(
   state: OrchestratorStoreState,
   response: ChatResponse,
 ): Partial<OrchestratorStoreState> {
-  const assistantText = response.route_result
+  // fallback ADR item 6: a pre-filter refusal must be checked FIRST. A blocked
+  // reply carries no route result, no clarifying questions and no subtasks, so
+  // every branch below it falls through to the generic planner-failure text —
+  // which would report a deliberate safety refusal as a broken planner and
+  // throw away the rule table's `user_message_ko`.
+  //
+  // The session state in that reply is still `created`, so the composer stays
+  // enabled and a corrected prompt can be sent straight away.
+  const prefilterMessage = response.prefilter?.user_message_ko;
+  const assistantText = prefilterMessage
+    ? prefilterMessage
+    : response.route_result
     ? formatRouteMessage(response.route_result)
     : response.clarifying_questions.length
     ? response.clarifying_questions.join("\n")
@@ -224,9 +235,14 @@ function applyClarifyResponse(
   state: OrchestratorStoreState,
   response: ClarifyResponse,
 ): Partial<OrchestratorStoreState> {
-  const resolvedText =
-    state.pendingClarification?.subtask_id === null || response.state === "created"
-      ? "추가 정보를 확인했습니다. 새 요청을 보내면 다시 안전한 경로로 분류합니다."
+  const resolvedRouteClarification =
+    response.state === "created" &&
+    state.pendingClarification?.subtask_id == null &&
+    response.route_result != null;
+  const resolvedText = response.pending_clarification
+    ? "답변을 확인했습니다. 주제를 하나로 좁혀 주세요."
+    : resolvedRouteClarification
+      ? "추가 정보를 확인했습니다. 다시 안전한 경로로 분류했습니다."
       : "추가 정보를 확인했습니다. 작업을 이어서 진행합니다.";
   const messages: ChatMessage[] = [
     ...state.messages,
@@ -239,7 +255,8 @@ function applyClarifyResponse(
   ];
   return {
     sessionState: advanceSessionState(state.sessionState, response.state),
-    pendingClarification: null,
+    pendingClarification: response.pending_clarification ?? null,
+    latestRouteResult: response.route_result ?? state.latestRouteResult,
     sendingClarification: false,
     messages,
     lastError: null,
@@ -740,7 +757,7 @@ export const useOrchestratorStore = create<OrchestratorStoreState>(
             };
           }
         } else if (event.kind === "subtask_completed") {
-          // Phase 9D: read ADR-0005 manifest.artifacts[].relative_uri.
+          // Phase 9D: read manifest ADR manifest.artifacts[].relative_uri.
           // Legacy flat keys (stl_path/gcode_path/organic_mesh_path) are
           // ignored in favor of the manifest; this keeps the store source
           // of truth aligned with /artifacts route + future replay.

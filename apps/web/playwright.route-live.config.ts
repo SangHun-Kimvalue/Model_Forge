@@ -1,5 +1,7 @@
 import { defineConfig } from "@playwright/test";
 
+const routeLiveQueueRoot = `.model_forge/route-live-draft-queue-${process.pid}-${Date.now()}`;
+
 /**
  * Phase 12S natural-language route UI smoke.
  *
@@ -29,6 +31,7 @@ export default defineConfig({
         ORCHESTRATOR_ALLOWED_ORIGINS:
           "http://127.0.0.1:3012,http://localhost:3012",
         ORCHESTRATOR_NATURAL_LANGUAGE_ROUTE_ENTRY: "true",
+        ORCHESTRATOR_DRAFT_QUEUE_ROOT: routeLiveQueueRoot,
       },
     },
     {

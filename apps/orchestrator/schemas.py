@@ -304,6 +304,11 @@ class IntakeNextStepView(BaseModel):
     draft_asset: dict[str, Any] | None = None
     draft_authoring_status: str | None = None
     draft_authoring_reason: str | None = None
+    # fallback ADR item 6: structured IP/abuse pre-filter decision (decision /
+    # matched_rule_id / reason_code / user_message_ko) when the capable model was
+    # blocked BEFORE being invoked. Optional additive field: existing responses
+    # now serialize `"prefilter": null`.
+    prefilter: dict[str, Any] | None = None
     review_required: bool = True
     runtime_execution_started: bool = False
     runtime_catalog_registered: bool = False
@@ -351,6 +356,11 @@ class ChatResponse(BaseModel):
     Exactly one of ``subtasks`` / ``clarifying_questions`` is populated
     when the planner returns successfully. ``state`` is the post-call
     session state so the client does not need a follow-up GET.
+
+    A pre-filter block is a *fourth* shape: every planner output field stays
+    empty and ``prefilter`` carries the verdict. That combination is already
+    legal — the validator below only rejects more than one populated field, so
+    zero needs no exemption.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -363,6 +373,17 @@ class ChatResponse(BaseModel):
     pending_gate: PendingGateView | None = None
     pending_clarification: PendingClarificationView | None = None
     route_result: NaturalLanguageRouteView | None = None
+    # fallback ADR item 6: structured IP/abuse pre-filter decision (decision /
+    # matched_rule_id / reason_code / user_message_ko) when the raw ``/chat``
+    # message was blocked BEFORE the planner was invoked. Mirrors
+    # ``IntakeNextStepView.prefilter`` so both blocked boundaries carry the
+    # verdict in the same shape. Optional additive field: existing responses
+    # now serialize ``"prefilter": null``.
+    #
+    # Deliberately NOT folded into ``clarifying_questions``: "we need more
+    # information" and "we do not accept this request" are different events,
+    # and a client that conflates them shows a re-ask UI for a refusal.
+    prefilter: dict[str, Any] | None = None
 
     @model_validator(mode="after")
     def _exactly_one_planner_output(self) -> "ChatResponse":
@@ -442,6 +463,8 @@ class ClarifyResponse(BaseModel):
     clarification_id: str = Field(min_length=1)
     accepted: bool
     state: SessionState
+    route_result: NaturalLanguageRouteView | None = None
+    pending_clarification: PendingClarificationView | None = None
 
 
 class SessionEventKind(StrEnum):

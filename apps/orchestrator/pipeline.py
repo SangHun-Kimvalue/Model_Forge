@@ -4,7 +4,7 @@ Graph nodes own state transitions and event publication. Concrete
 domain work lives here so Phase 8B can add real CAD/Orca/profile logic
 without turning ``graph.py`` into the pipeline implementation.
 
-Phase 9B note (ADR-0005):
+Phase 9B note (manifest ADR):
 ``MechanicalPipeline.execute`` now also produces a
 :class:`~modules.artifacts.SubtaskArtifactManifest` and writes it under
 the per-subtask sandbox the orchestrator passes in. The flat-key
@@ -13,13 +13,18 @@ WS event payload contract does not break in flight.
 """
 
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter
+from types import MappingProxyType
 
-from apps.orchestrator.exceptions import ClarificationRequiredError
+from apps.orchestrator.exceptions import (
+    ClarificationRequiredError,
+    OrchestratorConfigError,
+    PrefilterBlockedError,
+)
 from apps.orchestrator.provider_switch import (
     CADCoderProviderFactory,
     CADCoderProviderRequest,
@@ -67,8 +72,74 @@ from modules.template.fallback import (
     TemplateFallbackRender,
     TemplateFallbackRouter,
 )
+from modules.template.ip_abuse_prefilter import FallbackGateDecision
 from modules.validator.base import BaseMeshValidator
 from modules.validator.schemas import ValidationCheck, ValidationRequest
+
+#: Pre-filter predicate contract: prompt in, structured verdict out, no side
+#: effects. Satisfied by
+#: ``modules.template.ip_abuse_prefilter.should_invoke_fallback_agent``; tests
+#: substitute a stub with the same shape.
+PipelinePrefilterGate = Callable[[str], FallbackGateDecision]
+
+#: Machine-readable ``prefilter_route_reason`` per (pipeline, blocked verdict),
+#: fallback ADR item 6. Mirrors ``CAPABLE_PREFILTER_BLOCKED_REASONS``: the mapping
+#: is closed and interpolates neither the variable ``reason_code`` nor any
+#: human-facing text, so consumers branch on an exact string.
+#:
+#: This is deliberately NOT ``FallbackGateDecision.reason_code``. That field is
+#: owned by the rule tables (``prohibited_category`` /
+#: ``trademark_or_ip_review_required``) and is preserved verbatim into the
+#: durable manual-review record; overwriting it with a route reason would
+#: forge the audit trail. The route reason is carried alongside it so a failure
+#: payload says which pipeline blocked without the consumer re-deriving it from
+#: ``subtask.kind``.
+MECHANICAL_PREFILTER_ROUTE_REASONS: Mapping[str, str] = MappingProxyType(
+    {
+        "blocked_prohibited": "mechanical_prefilter_blocked_prohibited",
+        "manual_review_ip": "mechanical_prefilter_manual_review_ip",
+    }
+)
+ORGANIC_PREFILTER_ROUTE_REASONS: Mapping[str, str] = MappingProxyType(
+    {
+        "blocked_prohibited": "organic_prefilter_blocked_prohibited",
+        "manual_review_ip": "organic_prefilter_manual_review_ip",
+    }
+)
+
+
+def _enforce_prefilter(
+    prefilter: PipelinePrefilterGate,
+    *,
+    prompt: str,
+    route_reasons: Mapping[str, str],
+) -> None:
+    """Run the IP/abuse guard before anything else in a pipeline.
+
+    One helper shared by both pipelines on purpose (nothing pipeline-specific
+    but the route-reason table): two copies would drift and only one of them
+    would get fixed.
+
+    An unmapped non-``allow`` verdict fails closed — generation must not
+    proceed just because the decision taxonomy grew a value this wiring has
+    never seen.
+    """
+    decision = prefilter(prompt)
+    if decision.decision == "allow":
+        return
+    route_reason = route_reasons.get(decision.decision)
+    if route_reason is None:
+        raise OrchestratorConfigError(
+            f"Unmapped IP/abuse pre-filter verdict {decision.decision!r} in "
+            "pipeline wiring; refusing to generate on an unknown safety verdict."
+        )
+    # D7: the user-facing text is the rule table's, never invented here.
+    raise PrefilterBlockedError(
+        decision.user_message_ko,
+        decision=decision,
+        prefilter_route_reason=route_reason,
+    )
+
 
 _DSL_TO_DIALECT: dict[CADDsl, CADDialect] = {
     "cadquery": CADDialect.CADQUERY,
@@ -275,7 +346,7 @@ class PipelineArtifacts:
     Phase 9D close: legacy flat ``stl_path`` / ``gcode_path`` / ``threemf_path``
     fields and event-payload keys are removed. UI/API consumers MUST read
     artifact paths exclusively from ``manifest.artifacts[].relative_uri``
-    (ADR-0005 invariant #5).
+    (manifest ADR invariant #5).
     """
 
     adapter_cad: str
@@ -311,6 +382,10 @@ class MechanicalPipeline:
     logger: logging.Logger
     printer: PrinterProfile
     material: MaterialPreset
+    # fallback ADR item 6: mandatory, no default. A pipeline that can be assembled
+    # without an IP/abuse gate is exactly the defect this ADR is about, so every
+    # construction site is forced to name a gate instead of inheriting one.
+    prefilter: PipelinePrefilterGate
     process_profile: str | None = None
     template_fallback_router: TemplateFallbackRouter | None = None
     # Phase 10A.1: the cad_coder LLM must be told which DSL to emit.
@@ -342,6 +417,14 @@ class MechanicalPipeline:
         plan_snapshot_id: str | None = None,
         progress_callback: PipelineProgressCallback | None = None,
     ) -> PipelineArtifacts:
+        # fallback ADR item 6: FIRST statement — ahead of the requirement extractor
+        # (the first LLM call) and ahead of every progress event. "Do not
+        # generate then catch."
+        _enforce_prefilter(
+            self.prefilter,
+            prompt=subtask.description,
+            route_reasons=MECHANICAL_PREFILTER_ROUTE_REASONS,
+        )
         pipeline_started = perf_counter()
         requirements = await self._extract_requirements(
             subtask=subtask,
@@ -1302,13 +1385,13 @@ class MechanicalPipeline:
 
 @dataclass(frozen=True)
 class OrganicPipeline:
-    """Organic generator -> manifest pipeline (ADR-0005, Phase 9D close prep).
+    """Organic generator -> manifest pipeline (manifest ADR, Phase 9D close prep).
 
     Organic outputs are *not* sliced in this build:
     - Real organic adapters (Meshy) emit textured OBJ that the mock
       validator can read but the current Orca slicer pipeline cannot
       consume unsupervised.
-    - ADR-0005 records ``ORGANIC_MESH`` as a first-class artifact kind
+    - manifest ADR records ``ORGANIC_MESH`` as a first-class artifact kind
       so UI can render the OBJ even when no G-code exists.
 
     Once the mechanical+organic merge ADR lands (post Phase 9D), the
@@ -1318,6 +1401,8 @@ class OrganicPipeline:
 
     organic: BaseOrganicGenerator
     logger: logging.Logger
+    # fallback ADR item 6: mandatory, no default — same reason as MechanicalPipeline.
+    prefilter: PipelinePrefilterGate
 
     async def execute(
         self,
@@ -1331,6 +1416,13 @@ class OrganicPipeline:
         plan_snapshot_id: str | None = None,
         progress_callback: PipelineProgressCallback | None = None,
     ) -> "OrganicPipelineArtifacts":
+        # fallback ADR item 6: FIRST statement — ahead of ``organic.generate`` and
+        # ahead of the "생성을 요청했습니다" progress event below.
+        _enforce_prefilter(
+            self.prefilter,
+            prompt=subtask.description,
+            route_reasons=ORGANIC_PREFILTER_ROUTE_REASONS,
+        )
         await self._emit_progress(
             progress_callback,
             subtask=subtask,
@@ -1441,7 +1533,7 @@ class OrganicPipeline:
 
 @dataclass(frozen=True)
 class OrganicPipelineArtifacts:
-    """Result bundle for an organic subtask (ADR-0005).
+    """Result bundle for an organic subtask (manifest ADR).
 
     Phase 9D close: legacy flat ``organic_mesh_path`` / ``mesh_format``
     event-payload keys are removed. Consumers must read paths from
@@ -1459,10 +1551,13 @@ class OrganicPipelineArtifacts:
 
 
 __all__ = [
+    "MECHANICAL_PREFILTER_ROUTE_REASONS",
+    "ORGANIC_PREFILTER_ROUTE_REASONS",
     "MechanicalPipeline",
     "OrganicPipeline",
     "OrganicPipelineArtifacts",
     "PipelineArtifacts",
+    "PipelinePrefilterGate",
     "PipelineProgress",
     "PipelineProgressCallback",
 ]

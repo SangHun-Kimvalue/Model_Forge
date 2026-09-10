@@ -361,6 +361,12 @@ class OpenSCADAdapter(BaseMechanicalCADGenerator):
     def adapter_name(self) -> str:
         return self._adapter_label
 
+    @property
+    def sandbox_root(self) -> Path:
+        """조립 시 주입되어 정규화된 출력 sandbox 루트를 반환한다."""
+
+        return self._sandbox_root
+
     def health_check(self) -> bool:
         return self._runner.health_check(
             binary_path=self._binary_path,

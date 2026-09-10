@@ -17,6 +17,7 @@ from apps.orchestrator.graph import (
     start_clarification_resolution,
 )
 from apps.orchestrator.schemas import ClarifyRequest, ClarifyResponse
+from apps.orchestrator.sessions import pending_clarification_view
 
 router = APIRouter(tags=["clarify"])
 
@@ -64,6 +65,8 @@ async def clarify(body: ClarifyRequest, request: Request) -> ClarifyResponse:
             clarification_id=body.clarification_id,
             accepted=True,
             state=session.state,
+            route_result=session.latest_route_result,
+            pending_clarification=pending_clarification_view(session),
         )
 
 

@@ -80,6 +80,31 @@ _DSL_GUIDANCE: dict[CADDsl, str] = {
         "geometry on the top surface rather than as a comment or annotation. "
         "If the requested design is complex, prioritize a complete shorter "
         "manufacturable script over exhaustive visual detail."
+        # ------------------------------------------------------------------
+        # 품질 트랙에서 이식한 두 문단 — 여기부터 **끝에만** 덧붙인다.
+        # 위의 기존 문구는 한 글자도 바꾸지 않는다.
+        # (비공개) 테스트가 `runtime.endswith(SUFFIX)`를 **먼저** 단언한 뒤
+        # `sha256(runtime[:-len(SUFFIX)])`를 이식 전 동결 digest와
+        # 대조한다 — 중간 삽입은 그 자리에서 거부된다.
+        #
+        # ⚠️ 주장 범위: 이 두 문단은 **문구 이식**일 뿐이다. 품질 개선은 주장하지
+        # 않는다(선행 측정 결과 = "레버 효과 없음"). 특히 Shape fidelity는 선행
+        # 측정에서 측정 해상도 이하의 변화만 보였고, 판단으로 넣은 것이다.
+        # 아래는 전부 **미검증**이다: 기존 `Prefer a flat, support-light ...`와
+        # Shape fidelity 사이의 의미적 우선순위 · 무해성 · 품질 영향 ·
+        # 키링 hidden brief 피처가 Scope 문단에 억제되지 않는지 여부.
+        #
+        # Scope의 기준을 `the request`로 잡은 것은 의도적이다 — 키링 hidden brief는
+        # user 프롬프트의 `Internal manufacturing brief:` 안에 있고 요청의 일부로
+        # 읽히게 하려는 것이다. ⛔ 그 효과는 측정하지 않았다(NOT CLAIMED).
+        # ------------------------------------------------------------------
+        " Scope: model only what the request asks for. Do not add extra parts, "
+        "decoration, lettering, mounting hardware, repeated copies, or filler "
+        "geometry that the request never asks for; when in doubt, leave it out."
+        " Shape fidelity: aim for a model that reads as the requested object at "
+        "a glance. Keep the outline, proportions, and defining details that "
+        "identify it, and prefer that specific form over a generic "
+        "approximation assembled from plain primitives."
     ),
 }
 
@@ -108,6 +133,94 @@ _TOKEN_LIMIT_FINISH_REASONS = frozenset(
         "max_output_tokens_reached",
     }
 )
+
+
+# --------------------------------------------------------------------------
+# 키링 hidden brief 어휘 판정 (요구사항 오염 제거)
+#
+# 이 블록이 소유하는 어휘는 **로컬 최소 detector**다. `modules.newbie_request`의
+# `SubjectAliasTable`은 재사용하지 않는다 — import 하면
+# cad_coder -> newbie_request -> asset_authoring -> cad_coder 순환 초기화가 된다.
+# `modules/requirements/adapters/rule_based.py`의 `_BEAR_MARKERS`/`_KEYRING_MARKERS`가
+# 이미 별도 소유자이므로, 여기가 **세 번째 소유자**다(의도적 중복 — 정직하게 적는다).
+#
+# 라틴 어휘는 반드시 word-boundary로 매칭한다. 부분문자열이면
+# `bearing`->`bear`, `catalog`->`cat`, `charming`->`charm`이 걸려
+# **요청에 없던 주제/제조 계약이 프롬프트에 주입**된다(= 이 페이즈가 고치는 결함).
+# 한국어는 어절 경계가 공백으로 보장되지 않아 부분문자열로 매칭하고,
+# 알려진 오탐만 negative로 취소한다(`곰팡이`->`곰` 취소, `베어링`->`베어` 취소).
+# --------------------------------------------------------------------------
+
+
+def _compile_word_boundary(terms: tuple[str, ...]) -> re.Pattern[str]:
+    alternation = "|".join(re.escape(term) for term in sorted(terms, key=len, reverse=True))
+    return re.compile(rf"(?<!\w)(?:{alternation})(?!\w)", re.IGNORECASE)
+
+
+def _matches_korean_markers(
+    lowered: str,
+    markers: tuple[str, ...],
+    negatives: tuple[str, ...] = (),
+) -> bool:
+    text = lowered
+    for negative in negatives:
+        text = text.replace(negative, " ")
+    return any(marker in text for marker in markers)
+
+
+# 키링 요청 판정: 어휘는 그대로 두고 라틴 매칭 규칙만 word-boundary로 교정한다.
+_KEYRING_LATIN_RE = _compile_word_boundary(
+    ("keyring", "key ring", "keychain", "key chain", "charm")
+)
+_KEYRING_KOREAN_MARKERS = ("키링", "열쇠고리", "키체인")
+
+# 범용 캐릭터/동물 의도 (주제 지시 투입 조건)
+_CHARACTER_LATIN_RE = _compile_word_boundary(
+    ("bear", "teddy", "rabbit", "bunny", "cat", "kitty", "animal", "character", "mascot")
+)
+_CHARACTER_KOREAN_MARKERS = (
+    "곰",
+    "곰돌이",
+    "테디",
+    "베어",
+    "토끼",
+    "고양이",
+    "동물",
+    "캐릭터",
+    "마스코트",
+)
+_CHARACTER_KOREAN_NEGATIVES = ("곰팡이", "베어링")
+
+# 곰 전용 부분집합. 범용 캐릭터 detector를 그대로 재사용하면
+# `rabbit keyring`이 곰 semantic validation을 타서 repair/거부된다.
+# 공유하는 것은 경계 매칭 primitive뿐이다.
+_BEAR_LATIN_RE = _compile_word_boundary(("bear", "teddy"))
+_BEAR_KOREAN_MARKERS = ("곰", "곰돌이", "테디", "베어")
+_BEAR_KOREAN_NEGATIVES = ("곰팡이", "베어링")
+
+# 형식(flat) 축 — 3D 마커가 있으면 flat 지침을 억제한다(우선).
+_FLAT_LATIN_RE = _compile_word_boundary(
+    ("flat", "disc", "disk", "silhouette", "tag", "plate")
+)
+_FLAT_KOREAN_MARKERS = ("원판", "평면", "납작", "실루엣")
+_THREE_D_LATIN_RE = _compile_word_boundary(("3d", "figurine", "sculpt"))
+_THREE_D_KOREAN_MARKERS = ("입체", "피규어", "조각")
+
+# 장식(relief) 축 — flat과 독립이다. word-boundary라 완성형을 전부 열거해야 한다
+# (`(?<!\w)emboss(?!\w)`는 `embossed`를 매칭하지 않는다).
+_RELIEF_LATIN_RE = _compile_word_boundary(
+    (
+        "relief",
+        "emboss",
+        "embossed",
+        "embossing",
+        "engrave",
+        "engraved",
+        "engraving",
+        "pattern",
+    )
+)
+_RELIEF_KOREAN_MARKERS = ("양각", "음각", "엠보", "무늬", "패턴")
 
 
 class PromptBasedCADCoderAgent(BaseCADCoderAgent):
@@ -380,33 +493,7 @@ def _user_prompt(request: CADCoderRequest) -> str:
 def _openscad_hidden_design_brief(description: str) -> list[str]:
     lowered = description.lower()
     if _is_decorative_keyring_request(lowered):
-        brief = [
-            "- Interpret this as a flat 2.5D decorative keyring/charm that the "
-            "LLM must model directly in OpenSCAD, not as a template lookup.",
-            "- The result must be one connected printable part with a real "
-            "through-hole for the metal ring and at least 2.5 mm material "
-            "around that hole.",
-            "- Avoid a blank tag. Preserve the requested mascot/character as "
-            "visible raised or cut geometry on the body.",
-            "- Use short descriptive module, variable, or comment names for "
-            "visible features such as head, ears, face, eyes, nose, mouth, "
-            "paws, body, and keyring hole so semantic validation can catch "
-            "empty designs before slicing.",
-            "- Prefer simple circles, hulls, extruded text, and raised/shallow "
-            "relief details that are robust for FDM printing.",
-        ]
-        if _contains_bear_intent(lowered):
-            brief.extend(
-                [
-                    "- For a bear or teddy-bear keyring, include a recognizable "
-                    "rounded head, two ears, face details, eyes, nose/muzzle, "
-                    "and body or paw detail. A plain loop or blank tag is a "
-                    "failed design.",
-                    "- Keep all facial and decorative details physically "
-                    "touching the base so the STL remains one connected part.",
-                ]
-            )
-        return brief
+        return _keyring_design_brief(lowered)
     if any(marker in lowered for marker in ("drone", "quadcopter", "드론", "쿼드")):
         return [
             "- Interpret the request as a 200 mm-class quadcopter frame unless a "
@@ -443,6 +530,67 @@ def _openscad_hidden_design_brief(description: str) -> list[str]:
             "single connected solid.",
         ]
     return []
+
+
+def _keyring_design_brief(lowered: str) -> list[str]:
+    """키링 brief = 무조건 유지하는 **제조 계약** + 조건부 **형식/장식/주제** 지시.
+
+    오염 제거의 핵심: 마스코트/캐릭터 주제 지시는 요청이 **실제로 캐릭터를 지목할 때만**
+    넣는다. 순수 기하 키링 요청(`지름 26mm 원판...`)에 발바닥·귀·얼굴을 주입하지 않는다.
+
+    ⚠️ 주장 범위: 구멍 위치 항목은 **정성 지침**이다. 링 선경·구멍 지름·구멍-외곽
+    ligament 상한 같은 수치가 없으므로 실행 가능한 계약이 아니고, 이 문구가 링 사용
+    가능성을 보장하지 않는다(수치 계약 승격은 ADR 방향 3번의 일).
+    """
+    brief = [
+        # 제조 계약 (무조건) — 전역 guidance의 "minimum wall thickness 2.5 mm"와는
+        # 다른 계약이다. 여기는 **구멍 주변** 재료를 요구한다.
+        "- Interpret this as a decorative keyring/charm that the LLM must "
+        "model directly in OpenSCAD, not as a template lookup.",
+        "- The result must be one connected printable part with a real "
+        "through-hole for the metal ring and at least 2.5 mm material "
+        "around that hole.",
+        # 정성 지침 (무조건) — "실제 관통구멍"만으로는 구멍이 원판 한가운데 있어도
+        # 충족되고, 그러면 금속 링을 꿸 수 없다.
+        "- Position the ring hole close to the outer edge of the part, or on "
+        "an external lug, so a metal ring can actually pass through it.",
+        "- Use a short descriptive module, variable, or comment name such as "
+        "keyring_hole for that hole so semantic validation can trace it.",
+    ]
+    if _contains_flat_form_intent(lowered):
+        brief.append(
+            "- Prefer a flat 2.5D plate-like profile of constant extruded "
+            "thickness for this keyring."
+        )
+    if _contains_relief_intent(lowered):
+        brief.append(
+            "- Model the requested relief with simple circles, hulls, extruded "
+            "text, and raised/shallow relief details that are robust for FDM "
+            "printing."
+        )
+    if _contains_character_intent(lowered):
+        brief.extend(
+            [
+                "- Avoid a blank tag. Preserve the requested mascot/character "
+                "as visible raised or cut geometry on the body.",
+                "- Use short descriptive module, variable, or comment names "
+                "for visible features such as head, ears, face, eyes, nose, "
+                "mouth, paws, and body so semantic validation can catch empty "
+                "designs before slicing.",
+            ]
+        )
+    if _contains_bear_intent(lowered):
+        brief.extend(
+            [
+                "- For a bear or teddy-bear keyring, include a recognizable "
+                "rounded head, two ears, face details, eyes, nose/muzzle, "
+                "and body or paw detail. A plain loop or blank tag is a "
+                "failed design.",
+                "- Keep all facial and decorative details physically "
+                "touching the base so the STL remains one connected part.",
+            ]
+        )
+    return brief
 
 
 def _format_requirement_spec(request: CADCoderRequest) -> list[str]:
@@ -866,19 +1014,65 @@ def _last_significant_line(code: str) -> str:
 
 
 def _is_decorative_keyring_request(lowered_description: str) -> bool:
-    keyring_markers = (
-        "keyring",
-        "key ring",
-        "keychain",
-        "key chain",
-        "charm",
-        "키링",
-        "열쇠고리",
-        "키체인",
+    """키링/참 요청인가.
+
+    어휘는 종전 목록 그대로다. 라틴만 word-boundary로 바꿨다 —
+    부분문자열이면 `"charming figurine"`이 키링으로 판정돼 **비키링 피규어에
+    키링 제조 계약이 주입**된다(요구사항 오염).
+    """
+    if _KEYRING_LATIN_RE.search(lowered_description) is not None:
+        return True
+    return any(marker in lowered_description for marker in _KEYRING_KOREAN_MARKERS)
+
+
+def _contains_character_intent(lowered_description: str) -> bool:
+    """캐릭터/동물 주제 의도가 있는가 (주제 지시 투입 조건).
+
+    표에 없는 주제는 "캐릭터 의도 없음"으로 본다 — 보수적으로 안 넣는 쪽이 복구 가능하다.
+    어휘의 **완전성은 주장하지 않는다**.
+    """
+    if _CHARACTER_LATIN_RE.search(lowered_description) is not None:
+        return True
+    return _matches_korean_markers(
+        lowered_description, _CHARACTER_KOREAN_MARKERS, _CHARACTER_KOREAN_NEGATIVES
     )
-    return any(marker in lowered_description for marker in keyring_markers)
 
 
 def _contains_bear_intent(lowered_description: str) -> bool:
-    bear_markers = ("bear", "teddy", "teddy-bear", "곰", "곰돌", "베어")
-    return any(marker in lowered_description for marker in bear_markers)
+    """곰 의도인가 — 곰 전용 semantic validation의 게이트.
+
+    ⚠️ `_contains_character_intent`를 호출하면 안 된다. 그러면 `rabbit keyring`도
+    곰 semantic validation을 타서 비곰 캐릭터가 repair/거부된다.
+    공유하는 것은 경계 매칭 primitive뿐이고, 어휘는 bear 전용 부분집합이다.
+    """
+    if _BEAR_LATIN_RE.search(lowered_description) is not None:
+        return True
+    return _matches_korean_markers(
+        lowered_description, _BEAR_KOREAN_MARKERS, _BEAR_KOREAN_NEGATIVES
+    )
+
+
+def _contains_three_d_form_intent(lowered_description: str) -> bool:
+    if _THREE_D_LATIN_RE.search(lowered_description) is not None:
+        return True
+    return any(marker in lowered_description for marker in _THREE_D_KOREAN_MARKERS)
+
+
+def _contains_flat_form_intent(lowered_description: str) -> bool:
+    """평면 형식 지침을 넣을 것인가.
+
+    3D 마커가 있으면 flat 마커가 있어도 넣지 않는다(억제 우선) — 3D 피규어형
+    키체인을 무조건 평면화하지 않기 위해서다.
+    """
+    if _contains_three_d_form_intent(lowered_description):
+        return False
+    if _FLAT_LATIN_RE.search(lowered_description) is not None:
+        return True
+    return any(marker in lowered_description for marker in _FLAT_KOREAN_MARKERS)
+
+
+def _contains_relief_intent(lowered_description: str) -> bool:
+    """장식(양각/음각) 지침을 넣을 것인가. flat 축과 **독립**이다."""
+    if _RELIEF_LATIN_RE.search(lowered_description) is not None:
+        return True
+    return any(marker in lowered_description for marker in _RELIEF_KOREAN_MARKERS)

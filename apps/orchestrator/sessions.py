@@ -377,9 +377,27 @@ def register_route_clarification(
     source_decision: dict[str, object],
     reason: str,
 ) -> ClarificationGate:
+    gate = prepare_route_clarification(
+        session,
+        questions=questions,
+        source_decision=source_decision,
+        reason=reason,
+    )
+    commit_route_clarification(session, gate)
+    return gate
+
+
+def prepare_route_clarification(
+    session: Session,
+    *,
+    questions: tuple[ClarificationQuestion, ...],
+    source_decision: dict[str, object],
+    reason: str,
+) -> ClarificationGate:
+    """Build a route gate without mutating the session."""
     if len(questions) < 1 or len(questions) > 3:
         raise SessionStateError("Clarification requires between 1 and 3 questions.")
-    gate = ClarificationGate(
+    return ClarificationGate(
         clarification_id=_new_clarification_id(),
         session_id=session.session_id,
         subtask_id=None,
@@ -395,9 +413,12 @@ def register_route_clarification(
         ),
         approval_gate_id=None,
     )
+
+
+def commit_route_clarification(session: Session, gate: ClarificationGate) -> None:
+    """Commit a previously prepared route gate."""
     session.clarifications[gate.clarification_id] = gate
     session.pending_clarification_id = gate.clarification_id
-    return gate
 
 
 def plan_snapshot_id_for(subtasks: tuple[SubtaskView, ...]) -> str:
@@ -481,6 +502,20 @@ def resolve_clarification(
     clarification_id: str,
     answers: dict[str, ClarificationAnswerValue],
 ) -> ClarificationGate:
+    gate = prepare_clarification_resolution(session, clarification_id, answers)
+    gate.status = ClarificationStatus.ANSWERED
+    gate.answered_at = _now()
+    gate.answers = dict(answers)
+    session.pending_clarification_id = None
+    return gate
+
+
+def prepare_clarification_resolution(
+    session: Session,
+    clarification_id: str,
+    answers: dict[str, ClarificationAnswerValue],
+) -> ClarificationGate:
+    """Validate a clarification answer without changing gate or session state."""
     try:
         gate = session.clarifications[clarification_id]
     except KeyError as exc:
@@ -506,10 +541,6 @@ def resolve_clarification(
             + ", ".join(missing)
             + "."
         )
-    gate.status = ClarificationStatus.ANSWERED
-    gate.answered_at = _now()
-    gate.answers = dict(answers)
-    session.pending_clarification_id = None
     return gate
 
 
@@ -521,9 +552,12 @@ __all__ = [
     "SessionStore",
     "make_event",
     "pending_clarification_view",
+    "prepare_clarification_resolution",
+    "prepare_route_clarification",
     "plan_snapshot_id_for",
     "register_clarification",
     "register_route_clarification",
+    "commit_route_clarification",
     "register_gate",
     "requirement_snapshot_id_for",
     "route_requirement_snapshot_id_for",

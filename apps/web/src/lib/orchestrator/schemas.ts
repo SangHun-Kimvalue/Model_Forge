@@ -165,6 +165,21 @@ export interface PendingClarificationView {
   status: ClarificationStatus;
 }
 
+/**
+ * Mirror of the backend IP/abuse pre-filter verdict (fallback ADR item 6).
+ *
+ * Typed with its four named fields rather than `Record<string, unknown>`
+ * because a consumer reads `user_message_ko` to decide what the user is told;
+ * an index signature lets a typo compile and surface only as a blank refusal
+ * at runtime.
+ */
+export interface PrefilterDecisionView {
+  decision: string;
+  matched_rule_id: string | null;
+  reason_code: string;
+  user_message_ko: string;
+}
+
 export interface ChatResponse {
   session_id: string;
   trace_id: string;
@@ -174,6 +189,12 @@ export interface ChatResponse {
   pending_gate: PendingGateView | null;
   pending_clarification?: PendingClarificationView | null;
   route_result?: NaturalLanguageRouteView | null;
+  /**
+   * Present only when the request was refused before the planner ran. Every
+   * planner-output field is empty in that reply, so a client that ignores this
+   * field reports a safety refusal as a planner failure.
+   */
+  prefilter?: PrefilterDecisionView | null;
 }
 
 export interface ApproveRequest {
@@ -214,6 +235,8 @@ export interface ClarifyResponse {
   clarification_id: string;
   accepted: boolean;
   state: SessionState;
+  route_result?: NaturalLanguageRouteView | null;
+  pending_clarification?: PendingClarificationView | null;
 }
 
 export interface IntakeChoiceRequest {
@@ -261,6 +284,9 @@ export interface IntakeNextStepView {
   draft_asset?: Record<string, unknown> | null;
   draft_authoring_status?: string | null;
   draft_authoring_reason?: string | null;
+  // fallback ADR item 6: structured IP/abuse pre-filter decision when the capable
+  // model was blocked before being invoked (optional additive field).
+  prefilter?: Record<string, unknown> | null;
   review_required: boolean;
   runtime_execution_started: boolean;
   runtime_catalog_registered: boolean;
@@ -299,7 +325,7 @@ export interface SessionEvent {
 }
 
 // ---------------------------------------------------------------------------
-// Artifact manifest (ADR-0005). Mirrors `modules.artifacts.schemas`.
+// Artifact manifest (manifest ADR). Mirrors `modules.artifacts.schemas`.
 // Only `subtask_completed` (and `subtask_failed`) events carry a manifest.
 // ---------------------------------------------------------------------------
 
