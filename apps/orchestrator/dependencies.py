@@ -358,7 +358,7 @@ class OrchestratorSettings(BaseModel):
                 source, "ORCHESTRATOR_NATURAL_LANGUAGE_ROUTE_ENTRY", False
             ),
             capable_draft_route_enabled=_bool_from_env(
-                source, "CUBIFORGE_CAPABLE_DRAFT_ROUTE", False
+                source, "MODELFORGE_CAPABLE_DRAFT_ROUTE", False
             ),
             llm_assist_shadow_enabled=_bool_from_env(
                 source, "ORCHESTRATOR_LLM_ASSIST_SHADOW", False
@@ -595,7 +595,7 @@ def build_dependencies(
         and not effective_settings.natural_language_route_entry_enabled
     ):
         raise OrchestratorConfigError(
-            "CUBIFORGE_CAPABLE_DRAFT_ROUTE requires ORCHESTRATOR_NATURAL_LANGUAGE_ROUTE_ENTRY."
+            "MODELFORGE_CAPABLE_DRAFT_ROUTE requires ORCHESTRATOR_NATURAL_LANGUAGE_ROUTE_ENTRY."
         )
     log = logger or logging.getLogger("apps.orchestrator")
     try:
@@ -622,7 +622,7 @@ def build_dependencies(
         and not _capable_model_identifier(shared_llm_settings)
     ):
         raise OrchestratorConfigError(
-            "CUBIFORGE_CAPABLE_DRAFT_ROUTE requires a pinned capable model. "
+            "MODELFORGE_CAPABLE_DRAFT_ROUTE requires a pinned capable model. "
             "Set the model variable for the selected LLM provider."
         )
     capable_model_generator = (

@@ -47,7 +47,7 @@ function backendEnv(): Record<string, string> {
       "http://127.0.0.1:3013,http://localhost:3013",
     ORCHESTRATOR_LOG_LEVEL: optionalEnv("ORCHESTRATOR_LOG_LEVEL", "INFO"),
     ORCHESTRATOR_NATURAL_LANGUAGE_ROUTE_ENTRY: "true",
-    CUBIFORGE_CAPABLE_DRAFT_ROUTE: "true",
+    MODELFORGE_CAPABLE_DRAFT_ROUTE: "true",
     ORCHESTRATOR_DRAFT_QUEUE_ROOT: draftQueueRoot,
 
     // The capable generator is only assembled when a concrete non-mock
